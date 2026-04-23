@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Status · ShopBoss</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Poppins', 'sans-serif'] },
+          colors: { primary: '#e60012', primaryHover: '#cc0010', dark: '#0f172a' },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f8f9fa; }
+    
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .status-pending { color: #f59e0b; }
+    .status-confirmed { color: #10b981; }
+    .status-processing { color: #3b82f6; }
+    .status-completed { color: #059669; }
+    .status-cancelled { color: #ef4444; }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    
+    .status-pending-bg { background: #fef3c7; }
+    .status-confirmed-bg { background: #d1fae5; }
+    .status-processing-bg { background: #dbeafe; }
+    .status-completed-bg { background: #a7f3d0; }
+    .status-cancelled-bg { background: #fee2e2; }
+    
+    .step-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      transition: all 0.5s ease;
+    }
+    
+    .step-active { background: #e60012; color: white; }
+    .step-completed { background: #10b981; color: white; }
+    .step-cancelled { background: #ef4444; color: white; }
+    .step-inactive { background: #e5e7eb; color: #9ca3af; }
+    
+    .animate-slide-in { animation: slideIn 0.5s ease forwards; }
+    
+    .modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 1000; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="flex items-center justify-between">
+        <a href="index.html" class="text-xl font-bold hover:text-primary transition-colors">
+          <i class="fas fa-arrow-left mr-2"></i>Back to Shop
+        </a>
+        
+        <div class="flex items-center gap-3">
+          <!-- Account Button -->
+          <div class="relative">
+            <button id="accountBtn" onclick="toggleAccountDropdown()" 
+                    class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <i class="fas fa-user text-xl"></i>
+            </button>
+            <div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
+              <div class="text-center pb-4 border-b">
+                <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <i class="fas fa-user text-xl text-primary"></i>
+                </div>
+                <p id="dropdownUserName" class="font-bold">Guest</p>
+                <p id="dropdownUserEmail" class="text-xs text-gray-500"></p>
+              </div>
+              <div class="py-2 space-y-1">
+                <button onclick="viewMyOrders()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+                  <i class="fas fa-shopping-bag text-gray-400"></i> My Orders
+                </button>
+                <button onclick="openModal('accountModal'); closeAccountDropdown()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+                  <i class="fas fa-cog text-gray-400"></i> Account Settings
+                </button>
+                <button onclick="handleLogout()" id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm hidden">
+                  <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+              </div>
+              <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
+                <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">Login</button>
+                <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">Register</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="flex items-center justify-center p-4" style="min-height: calc(100vh - 80px);">
+    <div id="orderStatusContainer" class="bg-white rounded-3xl shadow-xl max-w-2xl w-full p-8 animate-slide-in">
+      <!-- Loading -->
+      <div id="loadingState" class="text-center py-12">
+        <div class="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p class="text-gray-500">Loading order status...</p>
+      </div>
+      
+      <!-- Order Not Found -->
+      <div id="notFoundState" class="hidden text-center py-12">
+        <span class="text-6xl mb-4 block">🔍</span>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Order Not Found</h2>
+        <p class="text-gray-500 mb-6">We couldn't find this order. It may have been removed or the link is incorrect.</p>
+        <a href="index.html" class="inline-flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-full font-medium hover:bg-primaryHover transition-colors">
+          <i class="fas fa-shopping-cart"></i> Continue Shopping
+        </a>
+      </div>
+      
+      <!-- Order Details -->
+      <div id="orderDetails" class="hidden">
+        <div class="text-center mb-8">
+          <div class="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-shopping-bag text-3xl text-primary"></i>
+          </div>
+          <h1 class="text-3xl font-bold text-gray-900 mb-1">Order Status</h1>
+          <p id="orderIdDisplay" class="text-gray-500 font-mono text-lg"></p>
+        </div>
+        
+        <div class="text-center mb-8">
+          <div id="statusBadge" class="status-badge"></div>
+          <p id="orderDate" class="text-sm text-gray-400 mt-3"></p>
+        </div>
+        
+        <div class="mb-8">
+          <div class="flex items-center justify-between relative">
+            <div class="absolute top-5 left-0 right-0 h-1 bg-gray-200 z-0">
+              <div id="progressFill" class="h-full bg-primary transition-all duration-1000 rounded-full" style="width: 0%"></div>
+            </div>
+            <div class="flex flex-col items-center relative z-10">
+              <div id="step1Circle" class="step-circle step-inactive">1</div>
+              <span class="text-xs mt-2 font-medium">Placed</span>
+            </div>
+            <div class="flex flex-col items-center relative z-10">
+              <div id="step2Circle" class="step-circle step-inactive">2</div>
+              <span class="text-xs mt-2 font-medium">Confirmed</span>
+            </div>
+            <div class="flex flex-col items-center relative z-10">
+              <div id="step3Circle" class="step-circle step-inactive">3</div>
+              <span class="text-xs mt-2 font-medium">Processing</span>
+            </div>
+            <div class="flex flex-col items-center relative z-10">
+              <div id="step4Circle" class="step-circle step-inactive">4</div>
+              <span class="text-xs mt-2 font-medium">Done</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div class="bg-gray-50 rounded-2xl p-4">
+            <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">Customer</h3>
+            <p id="customerName" class="font-semibold"></p>
+            <p id="customerPhone" class="text-sm text-gray-600"></p>
+            <p id="customerAddress" class="text-sm text-gray-600"></p>
+          </div>
+          <div class="bg-gray-50 rounded-2xl p-4">
+            <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">Order Total</h3>
+            <p id="orderTotal" class="text-3xl font-bold text-primary"></p>
+          </div>
+        </div>
+        
+        <div class="mb-6">
+          <h3 class="text-xs font-bold text-gray-400 uppercase mb-3">Order Items</h3>
+          <div id="orderItemsList" class="space-y-2"></div>
+        </div>
+        
+        <div id="cancelledMessage" class="hidden bg-red-50 border border-red-200 rounded-2xl p-4 text-center mb-6">
+          <p class="text-red-600 font-medium">❌ This order has been cancelled</p>
+          <p class="text-sm text-red-500 mt-1">Please contact us for more information</p>
+        </div>
+        
+        <div class="flex gap-3">
+          <a href="index.html" class="flex-1 bg-dark text-white py-3 rounded-xl text-center font-medium hover:bg-black transition-colors">
+            Continue Shopping
+          </a>
+          <button onclick="contactSupport()" class="flex-1 bg-primary text-white py-3 rounded-xl font-medium hover:bg-primaryHover transition-colors">
+            <i class="fab fa-whatsapp mr-2"></i> Contact Us
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Modal -->
+  <div id="accountModal" class="modal hidden">
+    <div class="bg-white rounded-3xl max-w-md w-full p-8 mx-4 shadow-2xl relative">
+      <div id="loginForm">
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-user text-2xl text-primary"></i>
+          </div>
+          <h2 class="text-2xl font-bold">Welcome Back</h2>
+          <p class="text-gray-500 text-sm">Login to your account</p>
+        </div>
+        <div class="space-y-3">
+          <input type="email" id="loginEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+          <input type="password" id="loginPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+          <button onclick="handleLogin()" class="w-full bg-primary text-white py-3 rounded-xl font-bold">Login</button>
+        </div>
+        <p class="text-center text-sm text-gray-500 mt-4">
+          Don't have an account? 
+          <button onclick="showRegisterForm()" class="text-primary font-semibold hover:underline">Register</button>
+        </p>
+      </div>
+      <div id="registerForm" class="hidden">
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-user-plus text-2xl text-primary"></i>
+          </div>
+          <h2 class="text-2xl font-bold">Create Account</h2>
+          <p class="text-gray-500 text-sm">Join our community</p>
+        </div>
+        <div class="space-y-3">
+          <input type="text" id="regName" placeholder="Full Name" class="w-full border p-3 rounded-xl" />
+          <input type="email" id="regEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+          <input type="tel" id="regPhone" placeholder="Phone number (optional)" class="w-full border p-3 rounded-xl" />
+          <input type="text" id="regAddress" placeholder="Address (optional)" class="w-full border p-3 rounded-xl" />
+          <input type="password" id="regPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+          <input type="password" id="regConfirmPassword" placeholder="Confirm Password" class="w-full border p-3 rounded-xl" />
+          <button onclick="handleRegister()" class="w-full bg-primary text-white py-3 rounded-xl font-bold">Create Account</button>
+        </div>
+        <p class="text-center text-sm text-gray-500 mt-4">
+          Already have an account? 
+          <button onclick="showLoginForm()" class="text-primary font-semibold hover:underline">Login</button>
+        </p>
+      </div>
+      <button onclick="closeModal('accountModal')" class="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">✕</button>
+    </div>
+  </div>
+
+  <!-- Toast Message -->
+  <div id="toastMsg" style="position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #0f172a; color: white; padding: 10px 24px; border-radius: 40px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 9999; white-space: nowrap;"></div>
+
+  <script src="shared-header.js"></script>
+  
+  <script>
+    // Order Tracking Logic
+    const STORAGE_ORDERS = 'shop_orders_v1';
+  
+    
+    function getBusinessInfo() {
+      const raw = localStorage.getItem(STORAGE_BUSINESS);
+      if (!raw) return { phone: "+1234567890" };
+      try { return JSON.parse(raw); } catch(e) { return { phone: "+1234567890" }; }
+    }
+    
+    function getStatusInfo(status) {
+      const statusMap = {
+        pending: { text: '🟡 Pending', bg: 'status-pending-bg', color: 'status-pending', icon: 'fa-clock' },
+        confirmed: { text: '🟢 Confirmed', bg: 'status-confirmed-bg', color: 'status-confirmed', icon: 'fa-check-circle' },
+        processing: { text: '🔵 Processing', bg: 'status-processing-bg', color: 'status-processing', icon: 'fa-spinner' },
+        completed: { text: '✅ Completed', bg: 'status-completed-bg', color: 'status-completed', icon: 'fa-check-double' },
+        cancelled: { text: '❌ Cancelled', bg: 'status-cancelled-bg', color: 'status-cancelled', icon: 'fa-times-circle' }
+      };
+      return statusMap[status] || statusMap.pending;
+    }
+    
+    function updateProgressSteps(status) {
+      const steps = ['pending', 'confirmed', 'processing', 'completed'];
+      const isCancelled = status === 'cancelled';
+      let progressWidth = 0;
+      
+      steps.forEach((step, index) => {
+        const circle = document.getElementById(`step${index + 1}Circle`);
+        if (!circle) return;
+        
+        if (isCancelled) {
+          circle.className = 'step-circle step-cancelled';
+          circle.innerHTML = '✕';
+        } else if (steps.indexOf(status) > index) {
+          circle.className = 'step-circle step-completed';
+          circle.innerHTML = '✓';
+          progressWidth = ((index + 1) / (steps.length - 1)) * 100;
+        } else if (steps.indexOf(status) === index) {
+          circle.className = 'step-circle step-active';
+          circle.innerHTML = index + 1;
+          progressWidth = (index / (steps.length - 1)) * 100;
+        } else {
+          circle.className = 'step-circle step-inactive';
+          circle.innerHTML = index + 1;
+        }
+      });
+      
+      const progressFill = document.getElementById('progressFill');
+      if (progressFill) {
+        setTimeout(() => { progressFill.style.width = `${progressWidth}%`; }, 300);
+      }
+    }
+    
+    function renderOrderDetails(order) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('orderDetails').classList.remove('hidden');
+      
+      const statusInfo = getStatusInfo(order.status || 'pending');
+      
+      document.getElementById('orderIdDisplay').textContent = `Order #${order.id}`;
+      document.getElementById('orderDate').textContent = `Placed on ${new Date(order.date).toLocaleDateString('en-US', { 
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+      })}`;
+      
+      const statusBadge = document.getElementById('statusBadge');
+      statusBadge.className = `status-badge ${statusInfo.bg} ${statusInfo.color}`;
+      statusBadge.innerHTML = `<i class="fas ${statusInfo.icon}"></i> ${statusInfo.text}`;
+      
+      document.getElementById('customerName').textContent = order.customer;
+      document.getElementById('customerPhone').textContent = order.phone;
+      document.getElementById('customerAddress').textContent = order.address;
+      document.getElementById('orderTotal').textContent = `FCFA ${order.total.toFixed(2)}`;
+      
+      const itemsList = document.getElementById('orderItemsList');
+      itemsList.innerHTML = order.items.map(item => `
+        <div class="flex justify-between items-center bg-gray-50 rounded-xl p-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center text-sm font-bold">${item.qty}x</div>
+            <span class="font-medium">${item.name}</span>
+          </div>
+          <span class="font-semibold">FCFA ${(item.price * item.qty).toFixed(2)}</span>
+        </div>
+      `).join('');
+      
+      if (order.status === 'cancelled') {
+        document.getElementById('cancelledMessage').classList.remove('hidden');
+      }
+      
+      updateProgressSteps(order.status || 'pending');
+    }
+    
+    function loadOrder() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const orderId = urlParams.get('order');
+      
+      if (!orderId) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('notFoundState').classList.remove('hidden');
+        return;
+      }
+      
+      setTimeout(() => {
+        const raw = localStorage.getItem(STORAGE_ORDERS);
+        const orders = raw ? JSON.parse(raw) : [];
+        const order = orders.find(o => o.id === orderId);
+        
+        if (!order) {
+          document.getElementById('loadingState').classList.add('hidden');
+          document.getElementById('notFoundState').classList.remove('hidden');
+          return;
+        }
+        
+        renderOrderDetails(order);
+      }, 800);
+    }
+    
+    function contactSupport() {
+      const business = getBusinessInfo();
+      const phone = (business.phone || '+1234567890').replace(/\D/g, '');
+      const orderId = new URLSearchParams(window.location.search).get('order');
+      const msg = `Hello! I have a question about my order #${orderId}`;
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+    
+    document.addEventListener('DOMContentLoaded', loadOrder);
+  </script>
+</body>
+</html>

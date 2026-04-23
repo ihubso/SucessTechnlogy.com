@@ -107,17 +107,25 @@ function normalizeProductImages(products) {
 //               PRODUCT FUNCTIONS
 // ===============================================
 
-function getProducts() {
+async function getProducts() {
+  // Try Supabase first
+  try {
+    const supabaseProducts = await fetchProductsFromDB();
+    if (supabaseProducts && supabaseProducts.length > 0) {
+      // Cache in localStorage as backup
+      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(supabaseProducts));
+      return supabaseProducts;
+    }
+  } catch (e) {
+    console.log('⚠️ Supabase fetch failed, using localStorage');
+  }
+  
+  // Fallback to localStorage
   let p = getStorage(STORAGE.PRODUCTS);
   if (!p || p.length === 0) {
     const normalized = normalizeProductImages(DEFAULT_PRODUCTS);
     setStorage(STORAGE.PRODUCTS, normalized);
     return normalized;
-  }
-  // Ensure existing products have images array
-  if (p.some(prod => !prod.images)) {
-    p = normalizeProductImages(p);
-    setStorage(STORAGE.PRODUCTS, p);
   }
   return p;
 }

@@ -1,80 +1,131 @@
 // supabase-api.js - ShopBoss Database Operations
-// Uses shopbossSupabase from supabase-config.js
+// ===============================================
+//               PRODUCTS CRUD
+// ===============================================
 
-// ===============================================
-//               PRODUCTS
-// ===============================================
-async function fetchProducts() {
-  const { data, error } = await shopbossSupabase
+// Fetch ALL products from Supabase
+async function fetchProductsFromDB() {
+  console.log('📡 Fetching products from Supabase...');
+  const { data, error } = await supabase
     .from('products')
     .select('*')
     .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error fetching products:', error);
-    return [];
+    console.error('❌ Error fetching products:', error.message);
+    return null;
   }
-  return data || [];
+  
+  console.log(`✅ Fetched ${data.length} products from Supabase`);
+  return data;
 }
 
+// Add a new product to Supabase
 async function addProductToDB(product) {
-  const { data, error } = await shopbossSupabase
+  console.log('📡 Adding product to Supabase...');
+  const { data, error } = await supabase
     .from('products')
-    .insert([product])
+    .insert([{
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      category: product.category || 'phone',
+      description: product.description || '',
+      stock: product.stock || 0,
+      image: product.image || 'https://placehold.co/600x400',
+      images: product.images || [product.image],
+      isHot: product.isHot || false,
+      isNew: product.isNew || false,
+      brand: product.brand || '',
+      os: product.os || '',
+      cpu: product.cpu || '',
+      specs: product.specs || '',
+      variants: product.variants || [],
+      deliveryEstimate: product.deliveryEstimate || ''
+    }])
     .select();
   
   if (error) {
-    console.error('Error adding product:', error);
+    console.error('❌ Error adding product:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log('✅ Product added to Supabase:', data[0].name);
+  return data[0];
 }
 
+// Update a product in Supabase
 async function updateProductInDB(product) {
-  const { data, error } = await shopbossSupabase
+  console.log('📡 Updating product in Supabase...');
+  const { data, error } = await supabase
     .from('products')
-    .update(product)
+    .update({
+      name: product.name,
+      price: product.price,
+      category: product.category,
+      description: product.description,
+      stock: product.stock,
+      image: product.image,
+      images: product.images,
+      isHot: product.isHot,
+      isNew: product.isNew,
+      brand: product.brand,
+      os: product.os,
+      cpu: product.cpu,
+      specs: product.specs,
+      variants: product.variants,
+      deliveryEstimate: product.deliveryEstimate
+    })
     .eq('id', product.id)
     .select();
   
   if (error) {
-    console.error('Error updating product:', error);
+    console.error('❌ Error updating product:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log('✅ Product updated in Supabase:', data[0].name);
+  return data[0];
 }
 
+// Delete a product from Supabase
 async function deleteProductFromDB(productId) {
-  const { error } = await shopbossSupabase
+  console.log('📡 Deleting product from Supabase...');
+  const { error } = await supabase
     .from('products')
     .delete()
     .eq('id', productId);
   
   if (error) {
-    console.error('Error deleting product:', error);
+    console.error('❌ Error deleting product:', error.message);
     return false;
   }
+  
+  console.log('✅ Product deleted from Supabase');
   return true;
 }
 
 // ===============================================
 //               ORDERS
 // ===============================================
-async function fetchOrders() {
-  const { data, error } = await shopbossSupabase
+
+async function fetchOrdersFromDB() {
+  const { data, error } = await supabase
     .from('orders')
     .select('*')
     .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error fetching orders:', error);
+    console.error('❌ Error fetching orders:', error.message);
     return [];
   }
-  return data || [];
+  console.log(`✅ Fetched ${data.length} orders`);
+  return data;
 }
 
-async function createOrder(order) {
-  const { data, error } = await shopbossSupabase
+async function createOrderInDB(order) {
+  console.log('📡 Creating order in Supabase...');
+  const { data, error } = await supabase
     .from('orders')
     .insert([{
       id: order.id,
@@ -89,45 +140,50 @@ async function createOrder(order) {
     .select();
   
   if (error) {
-    console.error('Error creating order:', error);
+    console.error('❌ Error creating order:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log('✅ Order created in Supabase:', data[0].id);
+  return data[0];
 }
 
 async function updateOrderStatusInDB(orderId, status) {
-  const { data, error } = await shopbossSupabase
+  const { data, error } = await supabase
     .from('orders')
     .update({ status })
     .eq('id', orderId)
     .select();
   
   if (error) {
-    console.error('Error updating order:', error);
+    console.error('❌ Error updating order:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log(`✅ Order ${orderId} status updated to ${status}`);
+  return data[0];
 }
 
 // ===============================================
 //               REVIEWS
 // ===============================================
-async function fetchReviews(productId) {
-  const { data, error } = await shopbossSupabase
+
+async function fetchReviewsFromDB(productId) {
+  const { data, error } = await supabase
     .from('reviews')
     .select('*')
     .eq('product_id', productId)
     .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error fetching reviews:', error);
+    console.error('❌ Error fetching reviews:', error.message);
     return [];
   }
-  return data || [];
+  return data;
 }
 
 async function addReviewToDB(review) {
-  const { data, error } = await shopbossSupabase
+  const { data, error } = await supabase
     .from('reviews')
     .insert([{
       id: review.id,
@@ -139,88 +195,87 @@ async function addReviewToDB(review) {
     .select();
   
   if (error) {
-    console.error('Error adding review:', error);
+    console.error('❌ Error adding review:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log('✅ Review added to Supabase');
+  return data[0];
 }
 
 // ===============================================
 //               DEALS
 // ===============================================
-async function fetchDeals() {
-  const { data, error } = await shopbossSupabase
+
+async function fetchDealsFromDB() {
+  const { data, error } = await supabase
     .from('deals')
     .select('*');
   
   if (error) {
-    console.error('Error fetching deals:', error);
+    console.error('❌ Error fetching deals:', error.message);
     return [];
   }
-  return data || [];
+  return data;
 }
 
 async function saveDealToDB(productId, discount) {
-  const { data, error } = await shopbossSupabase
+  const { data, error } = await supabase
     .from('deals')
     .upsert({ product_id: productId, discount }, { onConflict: 'product_id' })
     .select();
   
   if (error) {
-    console.error('Error saving deal:', error);
+    console.error('❌ Error saving deal:', error.message);
     return null;
   }
-  return data ? data[0] : null;
+  
+  console.log('✅ Deal saved to Supabase');
+  return data[0];
 }
 
 async function removeDealFromDB(productId) {
-  const { error } = await shopbossSupabase
+  const { error } = await supabase
     .from('deals')
     .delete()
     .eq('product_id', productId);
   
   if (error) {
-    console.error('Error removing deal:', error);
+    console.error('❌ Error removing deal:', error.message);
     return false;
   }
+  
+  console.log('✅ Deal removed from Supabase');
   return true;
 }
 
 // ===============================================
-//               WISHLIST
+//               SYNC FUNCTIONS
 // ===============================================
-async function fetchWishlist(userId) {
-  const { data, error } = await shopbossSupabase
-    .from('wishlists')
-    .select('product_id')
-    .eq('user_id', userId);
-  
-  if (error) {
-    console.error('Error fetching wishlist:', error);
-    return [];
+
+// Sync all products from Supabase to localStorage
+async function syncProductsFromSupabase() {
+  const products = await fetchProductsFromDB();
+  if (products && products.length > 0) {
+    localStorage.setItem('shop_products_v3', JSON.stringify(products));
+    console.log(`✅ Synced ${products.length} products to localStorage`);
+    return products;
   }
-  return data ? data.map(w => w.product_id) : [];
+  return null;
 }
 
-async function toggleWishlistInDB(userId, productId) {
-  const { data: existing } = await shopbossSupabase
-    .from('wishlists')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('product_id', productId)
-    .maybeSingle();
+// Initialize: Load products from Supabase on startup
+async function initializeSupabaseData() {
+  console.log('🔄 Initializing Supabase data...');
   
-  if (existing) {
-    await shopbossSupabase
-      .from('wishlists')
-      .delete()
-      .eq('user_id', userId)
-      .eq('product_id', productId);
-    return false;
+  // Try to get products from Supabase first
+  const products = await syncProductsFromSupabase();
+  
+  if (products && products.length > 0) {
+    console.log(`✅ Loaded ${products.length} products from Supabase`);
+    return products;
   } else {
-    await shopbossSupabase
-      .from('wishlists')
-      .insert([{ user_id: userId, product_id: productId }]);
-    return true;
+    console.log('⚠️ No products found in Supabase, using localStorage');
+    return null;
   }
 }

@@ -2266,7 +2266,7 @@ document.getElementById('shopPhotoUpload')?.addEventListener('change', (e) => {
 
 
 
-function init() {
+assync function init() {
   if (!getStorage(STORAGE.PRODUCTS)) setStorage(STORAGE.PRODUCTS, DEFAULT_PRODUCTS);
   if (!getStorage(STORAGE.FEATURED) && getProducts().length) {
     setFeaturedIds([getProducts()[0].id]);

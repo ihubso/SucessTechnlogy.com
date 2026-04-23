@@ -1378,44 +1378,34 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     deliveryEstimate: fd.get('deliveryEstimate') || ''
   };
 
-  // ✅ Try Supabase first
+  // Try Supabase first
   let savedToCloud = false;
-  try {
-    const { data, error } = await supabase
-      .from('products')
-      .insert([newProd])
-      .select();
-    
-    if (error) throw error;
+  const result = await addProductToDB(newProd);
+  if (result) {
     savedToCloud = true;
-    console.log('✅ Product saved to Supabase!');
-  } catch (err) {
-    console.error('⚠️ Could not save to Supabase:', err.message);
   }
 
-  // Always save to localStorage as backup
+  // Always save to localStorage
   let prods = getProducts();
   prods.unshift(newProd);
   saveProducts(prods);
-  
-  // Clear cache
-  _cachedProducts = prods;
 
   e.target.reset();
   addedImages = [];
   updateMultiImagePreviews();
   
-  if (savedToCloud) {
-    showToast('✅ Product added to cloud!');
-  } else {
-    showToast('⚠️ Product saved locally');
-  }
-  
+  showToast(savedToCloud ? '✅ Product added to cloud!' : '⚠️ Product saved locally');
   refreshAll();
 });
 async function loadAdminFromSupabase() {
   try {
-    const { data: products, error } = await supabase
+    const client = getSupabase();
+    if (!client) {
+      console.log('⚠️ Supabase not available');
+      return null;
+    }
+    
+    const { data: products, error } = await client
       .from('products')
       .select('*')
       .order('created_at', { ascending: false });
@@ -1428,7 +1418,7 @@ async function loadAdminFromSupabase() {
       return products;
     }
   } catch (e) {
-    console.log('⚠️ Using localStorage for admin');
+    console.log('⚠️ Using localStorage for admin:', e.message);
   }
   return null;
 }

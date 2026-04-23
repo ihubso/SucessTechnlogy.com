@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>ShopBoss · Full Featured Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Poppins', 'sans-serif'] },
+          colors: { primary: '#e60012', primaryHover: '#cc0010', dark: '#0f172a' },
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Mobile Navigation Drawer -->
+<div class="mobile-nav-overlay" id="mobileNavOverlay"></div>
+<div class="mobile-nav-drawer" id="mobileNavDrawer">
+  <div class="mobile-nav-header">
+    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-xl">
+      ST
+    </div>
+    <div class="font-bold text-xl" id="headerShopName123">shop<span class="text-primary">Boss</span></div>
+    <button class="mobile-nav-close" id="mobileNavClose">&times;</button>
+  </div>
+    <div class="mobile-nav-content" id="mobileNavContent">
+
+    </div>
+</div>
+<header class="topbar">
+
+  <div class="flex items-center gap-2 cursor-pointer">
+    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-xl">
+      ST
+    </div>
+    <div class="font-extrabold text-2xl" id="headerShopName">
+      shop<span class="text-primary">Boss</span>
+    </div>
+    <button id="mobileMenuBtn" class="mobile-menu-btn">
+      <i class="fas fa-bars"></i>
+    </button>
+  </div>
+
+ <nav id="mainNav" class="nav-desktop">
+    <ul class="nav-list">
+      <li class="nav-item catalog-trigger" id="catalogTriggerWrap">
+        <a href="#" id="catalogTrigger" class="nav-link-main">Categories</a>
+        <li id="catalogDropdownPanel" class="catalog-dropdown-panel  ">
+          <div class="catalog-sidebar-wrap">
+            <div class="catalog-sidebar-left">
+              <div class="catalog-sidebar-head">☰ Categories</div>
+              <div id="catalogCategoryList" class="catalog-category-list"></div>
+            </div>
+            <div class="catalog-sidebar-right">
+              <h3 id="catalogSidebarTitle" class="catalog-sidebar-title">Category</h3>
+              <ul id="catalogSubList" class="catalog-sub-list"></ul>
+            </div>
+          </div>
+        </li>
+      </li>
+      <li class="nav-item has-dropdown" id="productsDropdown">
+        <a href="#" id="dropdownTrigger" class="nav-link-main">Products</a>
+        <div class="mega-menu mega-menu-products">
+          <h2>Shop Products</h2>
+         <div id="categoryFilterContainer" class="category-filters"></div>
+         
+           <section class="section" id="all-products">
+
+              <div id="productsGrid" class="grid"></div>
+              <div id="paginationControls" class="pagination"></div>
+            </section>
+        </div>
+      </li>
+      <li class="nav-item has-dropdown" id="brandDropdown">
+        <a href="#" id="brandTrigger" class="nav-link-main">Brand</a>
+        <div class="mega-menu mega-menu-brand">
+          <div id="brandCategoryContainer" class="brand-category-grid"></div>
+          <section class="section" id="brand-products">
+            <h2>Brand Products</h2>
+            <div id="brandProductsGrid" class="grid"></div>
+          </section>
+        </div>
+      </li>
+      <li class="nav-item"><a href="contact.html" class="nav-link-main">📍 Contact</a></li>
+      <li class="nav-item"><a href="#support" class="nav-link-main">Support</a></li>
+    </ul>
+  </nav>
+
+  <div class="header-right">
+    <div class="search-wrapper">
+      <input id="searchInput" type="text" placeholder="Search..." autocomplete="off" />
+      <div id="searchDropdown" class="search-dropdown"></div>
+    </div>
+      <div class="relative">
+        <button id="accountBtn" onclick="toggleAccountDropdown()" 
+                class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+          <i class="fas fa-user text-xl"></i>
+        </button>
+        <div id="accountDropdown" class="hidden absolute right-0 top-16 w-72 bg-white rounded-2xl shadow-2xl border z-50 p-4">
+          <div class="text-center pb-4 border-b">
+            <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+              <i class="fas fa-user text-xl text-primary"></i>
+            </div>
+            <p id="dropdownUserName" class="font-bold">Guest</p>
+            <p id="dropdownUserEmail" class="text-xs text-gray-500"></p>
+          </div>
+          <div class="py-2 space-y-1">
+            <button onclick="viewMyOrders()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+              <i class="fas fa-shopping-bag text-gray-400"></i> My Orders
+            </button>
+            <button onclick="openModal('accountModal'); closeAccountDropdown()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+              <i class="fas fa-cog text-gray-400"></i> Account Settings
+            </button>
+            <button onclick="handleLogout()" id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm hidden">
+              <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
+          </div>
+          <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
+            <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">
+              Login
+            </button>
+            <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">
+              Register
+            </button>
+          </div>
+        </div>
+      </div>
+    <button
+      id="wishlistBtn"
+      onclick="openModal('wishlistModal') && renderWishlistModal()"
+      class="relative bg-dark hover:bg-black text-white px-4 py-2 rounded-full"
+    >
+      ❤️ Wishlist
+      <span id="wishlistCount" class="ml-1 bg-primary rounded-full px-2 text-xs">0</span>
+    </button>
+
+    <button
+      id="cartBtn"
+      onclick="openModal('cartModal'); renderCart();"
+      class="relative bg-dark hover:bg-black text-white px-5 py-2.5 rounded-full"
+    >
+      🛒 Cart
+      <span
+        id="cartCount"
+        class="absolute -top-2 -right-2 bg-primary text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full"
+      >0</span>
+    </button>
+  </div>
+</header>
+
+
+
+<main>
+  <!-- Hero Section with Slider -->
+  <section class="hero">
+       <span class="hero-text">  <h1>Trending <span class="text-primary">Products</span></h1></span>
+
+    <div class="featured-slider" id="featuredSliderWrapper">
+      <button id="prevSlide" class="slide-nav hidden">‹</button>
+      <div id="featuredProductContainer" class="featured-container"></div>
+      <button id="nextSlide" class="slide-nav hidden">›</button>
+       
+    </div>
+     <div id="sliderDots" class="slider-dots"></div>
+
+  </section>
+
+
+<!-- Deals of the Day Section with Horizontal Scroll -->
+<section class="deals-section" id="deals-of-today">
+  <div class="deals-title-row">
+    <h2><span class="text-primary">🔥 Hot Deals</span> of the Day</h2>
+  </div>
+  
+  <!-- Navigation Buttons -->
+  <button class="deals-nav-btn prev hidden" id="dealsPrevBtn" aria-label="Previous deals">
+    ‹
+  </button>
+  <button class="deals-nav-btn next hidden" id="dealsNextBtn" aria-label="Next deals">
+    ›
+  </button>
+  
+  <!-- Scrollable Grid -->
+  <div id="dealsGrid" class="deals-grid"></div>
+  
+  <!-- Progress Bar -->
+  <div class="deals-progress">
+    <div class="deals-progress-bar">
+      <div class="deals-progress-fill" id="dealsProgressFill"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Hot Products Section -->
+<section class="section" id="hot-products">
+  <div class="flex justify-between items-center mb-6">
+    <h2>🔥 Hot Products</h2>
+    <a href="products.html?filter=hot" class="see-more-btn bg-primary text-white px-6 py-3 rounded-full hover:bg-primaryHover transition-all">
+      See More <i class="fas fa-arrow-right ml-2"></i>
+    </a>
+  </div>
+  <div id="hotProductsGrid" class="grid"></div>
+</section>
+
+<!-- New Products Section -->
+<section class="section" id="new-products">
+  <div class="flex justify-between items-center mb-6">
+    <h2>✨ New Arrivals</h2>
+    <a href="products.html?filter=new" class="see-more-btn border-2 border-primary text-primary px-6 py-3 rounded-full hover:bg-primary hover:text-white transition-all">
+      See More <i class="fas fa-arrow-right ml-2"></i>
+    </a>
+  </div>
+  <div id="newProductsGrid" class="grid"></div>
+</section>
+
+<!-- Floating Scroll Top Button -->
+<button id="scrollTopBtn" class="floating-btn">↑</button>
+
+<!-- Product Detail Modal -->
+<div id="productModal" class="modal hidden">
+  <div class="modalcontent">
+    <button id="closeProductModal" class="close-btn">×</button>
+    <div id="productDetailInner"></div>
+  </div>
+</div>
+
+
+<!-- Wishlist Modal (slide-in from right) -->
+<div id="wishlistModal" class="modal hidden fixed inset-0 z-[1100] flex justify-end">
+  <div class="bg-white w-full max-w-md h-full flex flex-col rounded-l-3xl">
+    <div class="p-6 border-b flex justify-between items-center">
+      <h2 class="text-2xl font-bold">❤️ My Wishlist</h2>
+      <button onclick="closeModal('wishlistModal')" class="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-2xl" aria-label="Close wishlist">×</button>
+    </div>
+    <div id="wishlistItems" class="flex-1 overflow-y-auto p-6"></div>
+  </div>
+</div>
+
+<!-- Cart Modal -->
+<div id="cartModal" class="modal hidden fixed inset-0 z-[1100] flex justify-end">
+  <div class="bg-white w-full max-w-md h-full flex flex-col rounded-l-3xl">
+    <div class="p-6 border-b flex justify-between items-center">
+      <h3 class="text-xl font-bold">Cart</h3>
+      <button onclick="closeModal('cartModal')" class="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-2xl" aria-label="Close cart">×</button>
+    </div>
+    <div id="cartItems" class="flex-1 overflow-y-auto p-6"></div>
+    <div class="p-6 border-t">
+      <div class="flex justify-between mb-6">
+        <span>Total</span>
+        <span class="text-2xl font-bold">FCFA <span id="cartTotal">0.00</span></span>
+      </div>
+      <button onclick="openCheckout()" class="w-full bg-primary text-white py-3 rounded-2xl">
+        Checkout
+      </button>
+      <button onclick="clearCart()" class="w-full text-slate-400 text-sm mt-2">
+        Empty Cart
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Checkout Modal -->
+<div id="checkoutModal" class="modal hidden">
+  <div class="bg-white p-8 rounded-3xl w-full max-w-sm">
+    <button onclick="closeModal('checkoutModal')" class="absolute top-4 right-4 w-8 h-8 bg-slate-100 rounded-full">
+      ✕
+    </button>
+    <h3 class="text-2xl font-bold mb-6">Checkout</h3>
+    <form id="checkoutForm">
+      <div>
+        <label>Full Name</label>
+        <input type="text" id="custName" required class="w-full border p-2 rounded" />
+      </div>
+      <div>
+        <label>Phone</label>
+        <input type="tel" id="custPhone" required class="w-full border p-2 rounded" />
+      </div>
+      <div>
+        <label>Address</label>
+        <textarea id="custAddr" required class="w-full border p-2 rounded"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-dark text-white py-3 rounded mt-4">
+        Confirm Order
+      </button>
+    </form>
+  </div>
+</div>
+<section class="section" id="recently-viewed">
+  <div class="flex justify-between items-center mb-6">
+    <h2>🕐 Recently Viewed</h2>
+  </div>
+  <div id="recentlyViewedGrid" class="grid"></div>
+</section>
+
+
+
+<!-- Account Modal -->
+<div id="accountModal" class="modal hidden">
+  <div class="bg-white rounded-3xl max-w-md w-full p-8 mx-4 shadow-2xl">
+    <!-- Login Form -->
+    <div id="loginForm">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-user text-2xl text-primary"></i>
+        </div>
+        <h2 class="text-2xl font-bold">Welcome Back</h2>
+        <p class="text-gray-500 text-sm">Login to your account</p>
+      </div>
+      <div class="space-y-3">
+        <input type="email" id="loginEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="loginPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+        <button onclick="handleLogin()" class="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primaryHover transition-colors">
+          Login
+        </button>
+      </div>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        Don't have an account? 
+        <button onclick="showRegisterForm()" class="text-primary font-semibold hover:underline">Register</button>
+      </p>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerForm" class="hidden">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-user-plus text-2xl text-primary"></i>
+        </div>
+        <h2 class="text-2xl font-bold">Create Account</h2>
+        <p class="text-gray-500 text-sm">Join our community</p>
+      </div>
+      <div class="space-y-3">
+        <input type="text" id="regName" placeholder="Full Name" class="w-full border p-3 rounded-xl" />
+        <input type="email" id="regEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+        <input type="tel" id="regPhone" placeholder="Phone number (optional)" class="w-full border p-3 rounded-xl" />
+        <input type="text" id="regAddress" placeholder="Address (optional)" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="regPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="regConfirmPassword" placeholder="Confirm Password" class="w-full border p-3 rounded-xl" />
+        <button onclick="handleRegister()" class="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primaryHover transition-colors">
+          Create Account
+        </button>
+      </div>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        Already have an account? 
+        <button onclick="showLoginForm()" class="text-primary font-semibold hover:underline">Login</button>
+      </p>
+    </div>
+
+    <button onclick="closeModal('accountModal')" class="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">
+      ✕
+    </button>
+  </div>
+</div>
+
+<!-- Account Menu Dropdown -->
+<div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
+  <div class="text-center pb-4 border-b">
+    <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+      <i class="fas fa-user text-xl text-primary"></i>
+    </div>
+    <p id="dropdownUserName" class="font-bold">Guest</p>
+    <p id="dropdownUserEmail" class="text-xs text-gray-500"></p>
+  </div>
+  <div class="py-2 space-y-1">
+    <button onclick="viewMyOrders()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+      <i class="fas fa-shopping-bag text-gray-400"></i> My Orders
+    </button>
+    <button onclick="openModal('accountModal'); closeAccountDropdown()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+      <i class="fas fa-cog text-gray-400"></i> Account Settings
+    </button>
+    <button onclick="handleLogout()" id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm hidden">
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </button>
+  </div>
+  <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
+    <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">Login</button>
+    <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">Register</button>
+  </div>
+</div>
+
+
+<!-- Footer -->
+<footer id="support">
+  <div>
+    <h4>Products</h4>
+    <p>Phone</p>
+    <p>Tablet</p>
+    <p>Audio</p>
+  </div>
+<div>
+  <h4>📱 Follow Us</h4>
+  <div class="flex gap-4 mt-2">
+    <a id="facebookLink" href="#" target="_blank" class="text-2xl hover:text-primary transition-colors">
+      <i class="fab fa-facebook"></i>
+    </a>
+    <a id="instagramLink" href="#" target="_blank" class="text-2xl hover:text-primary transition-colors">
+      <i class="fab fa-instagram"></i>
+    </a>
+    <a id="tiktokLink" href="#" target="_blank" class="text-2xl hover:text-primary transition-colors">
+      <i class="fab fa-tiktok"></i>
+    </a>
+  </div>
+</div>
+  <div>
+    <h4>About</h4>
+      <li class="mobile-nav-item"><a href="contact.html">📍 Locate Us</a></li>
+  </div>
+  <div>
+    <h4>📞 Contact</h4>
+    <p id="footerEmail"></p>
+    <p id="footerPhone"></p>
+    <p id="footerAddress"></p>
+  </div>
+</footer>
+
+<!-- Toast Message -->
+<div id="toastMsg" class="toast-msg"></div>
+<script src="viewer/prodct.js"></script>
+<script src="viewer/script.js"></script>
+</body>
+</html>

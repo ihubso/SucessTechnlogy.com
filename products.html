@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>All Products · ShopBoss</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Poppins', 'sans-serif'] },
+          colors: { primary: '#e60012', primaryHover: '#cc0010', dark: '#0f172a' },
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-50">
+  <!-- Header -->
+<!-- Header -->
+<header class="bg-white shadow-sm sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="index.html" class="text-2xl font-bold hover:text-primary transition-colors">
+          <i class="fas fa-arrow-left mr-2"></i>Back
+        </a>
+        <h1 class="text-2xl font-bold" id="pageTitle">All Products</h1>
+      </div>
+      
+      <div class="flex items-center gap-4">
+        <!-- Search -->
+        <div class="relative">
+          <input id="searchInput" type="text" placeholder="Search products..." 
+                 class="border rounded-full px-4 py-2 w-64 focus:ring-2 focus:ring-primary focus:border-transparent" />
+          <i class="fas fa-search absolute right-4 top-3 text-gray-400"></i>
+        </div>
+        <!-- Add this inside the header-right div, before the Shop Now button -->
+        <div class="relative">
+          <button id="accountBtn" onclick="toggleAccountDropdown()" 
+                  class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <i class="fas fa-user text-xl"></i>
+          </button>
+          <div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
+            <div class="text-center pb-4 border-b">
+              <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <i class="fas fa-user text-xl text-primary"></i>
+              </div>
+              <p id="dropdownUserName" class="font-bold">Guest</p>
+              <p id="dropdownUserEmail" class="text-xs text-gray-500"></p>
+            </div>
+            <div class="py-2 space-y-1">
+              <button onclick="viewMyOrders()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+                <i class="fas fa-shopping-bag text-gray-400"></i> My Orders
+              </button>
+              <button onclick="openModal('accountModal'); closeAccountDropdown()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
+                <i class="fas fa-cog text-gray-400"></i> Account Settings
+              </button>
+              <button onclick="handleLogout()" id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm hidden">
+                <i class="fas fa-sign-out-alt"></i> Logout
+              </button>
+            </div>
+            <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
+              <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">Login</button>
+              <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">Register</button>
+            </div>
+          </div>
+        </div>
+        <!-- Wishlist Button -->
+        <button onclick="openModal('wishlistModal'); renderWishlistModal()" 
+                class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+          <i class="far fa-heart text-2xl"></i>
+          <span id="wishlistCount" class="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+        </button>
+        
+        <!-- Cart Button with Preview -->
+        <div class="relative">
+          <button id="cartBtn" onclick="openModal('cartModal'); renderCart()" 
+                  class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <i class="fas fa-shopping-cart text-2xl"></i>
+            <span id="cartCount" class="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+          </button>
+          
+          <!-- Cart Preview Dropdown -->
+          <div id="cartPreview" class="hidden absolute right-0 top-12 w-80 bg-white rounded-xl shadow-2xl border z-50"></div>
+        </div>
+        
+        <button onclick="window.location.href='index.html'" 
+                class="bg-primary hover:bg-primaryHover text-white px-6 py-2 rounded-full transition-all">
+          Shop Now
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
+
+  <!-- Filters Bar -->
+  <div class="bg-white border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="flex items-center gap-2">
+          <label class="text-sm font-medium">Sort by:</label>
+          <select id="sortSelect" class="border rounded-lg px-3 py-2">
+            <option value="name_asc">Name (A-Z)</option>
+            <option value="name_desc">Name (Z-A)</option>
+            <option value="price_asc">Price (Low to High)</option>
+            <option value="price_desc">Price (High to Low)</option>
+          </select>
+        </div>
+        <div class="flex flex-wrap gap-2" id="categoryFilters"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Products Grid -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div id="productsGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+    <div id="paginationControls" class="flex justify-center gap-2 mt-8"></div>
+  </main>
+
+  <!-- Product Modal -->
+<!-- Wishlist Modal -->
+<div id="wishlistModal" class="modal hidden fixed inset-0 z-[1100] flex justify-end">
+  <div class="bg-white w-full max-w-md h-full flex flex-col rounded-l-3xl shadow-2xl">
+    <div class="p-6 border-b flex justify-between items-center">
+      <h2 class="text-2xl font-bold"><i class="fas fa-heart text-primary mr-2"></i>My Wishlist</h2>
+      <button onclick="closeModal('wishlistModal')" class="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-2xl transition-colors">×</button>
+    </div>
+    <div id="wishlistItems" class="flex-1 overflow-y-auto p-6"></div>
+  </div>
+</div>
+
+<!-- Cart Modal -->
+<div id="cartModal" class="modal hidden fixed inset-0 z-[1100] flex justify-end">
+  <div class="bg-white w-full max-w-md h-full flex flex-col rounded-l-3xl shadow-2xl">
+    <div class="p-6 border-b flex justify-between items-center">
+      <h3 class="text-xl font-bold"><i class="fas fa-shopping-cart mr-2"></i>Shopping Cart</h3>
+      <button onclick="closeModal('cartModal')" class="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-2xl transition-colors">×</button>
+    </div>
+    <div id="cartItems" class="flex-1 overflow-y-auto p-6"></div>
+    <div class="p-6 border-t bg-gray-50">
+      <div class="flex justify-between mb-4">
+        <span class="text-lg font-semibold">Total</span>
+        <span class="text-2xl font-bold">FCFA <span id="cartTotal">0.00</span></span>
+      </div>
+      <button onclick="openCheckout()" class="w-full bg-primary hover:bg-primaryHover text-white py-4 rounded-xl font-bold transition-all">
+        Proceed to Checkout
+      </button>
+      <button onclick="clearCart()" class="w-full text-gray-500 text-sm mt-3 hover:text-gray-700">
+        Clear Cart
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Product Detail Modal -->
+<div id="productModal" class="modal hidden">
+  <div class="modalcontent">
+    <button id="closeProductModal" class="close-btn">×</button>
+    <div id="productDetailInner"></div>
+  </div>
+</div>
+
+<!-- Checkout Modal -->
+<div id="checkoutModal" class="modal hidden">
+  <div class="bg-white p-8 rounded-3xl w-full max-w-md">
+    <button onclick="closeModal('checkoutModal')" class="absolute top-4 right-4 w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full">✕</button>
+    <h3 class="text-2xl font-bold mb-6">Checkout</h3>
+    <form id="checkoutForm">
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-2">Full Name</label>
+        <input type="text" id="custName" required class="w-full border rounded-lg p-2" />
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-2">Phone</label>
+        <input type="tel" id="custPhone" required class="w-full border rounded-lg p-2" />
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-2">Address</label>
+        <textarea id="custAddr" required class="w-full border rounded-lg p-2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-dark text-white py-3 rounded-lg mt-4 hover:bg-black transition-colors">
+        Confirm Order
+      </button>
+    </form>
+  </div>
+</div>
+<!-- Account Modal -->
+<div id="accountModal" class="modal hidden">
+  <div class="bg-white rounded-3xl max-w-md w-full p-8 mx-4 shadow-2xl relative">
+    <div id="loginForm">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-user text-2xl text-primary"></i>
+        </div>
+        <h2 class="text-2xl font-bold">Welcome Back</h2>
+        <p class="text-gray-500 text-sm">Login to your account</p>
+      </div>
+      <div class="space-y-3">
+        <input type="email" id="loginEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="loginPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+        <button onclick="handleLogin()" class="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primaryHover transition-colors">Login</button>
+      </div>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        Don't have an account? 
+        <button onclick="showRegisterForm()" class="text-primary font-semibold hover:underline">Register</button>
+      </p>
+    </div>
+    <div id="registerForm" class="hidden">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-user-plus text-2xl text-primary"></i>
+        </div>
+        <h2 class="text-2xl font-bold">Create Account</h2>
+        <p class="text-gray-500 text-sm">Join our community</p>
+      </div>
+      <div class="space-y-3">
+        <input type="text" id="regName" placeholder="Full Name" class="w-full border p-3 rounded-xl" />
+        <input type="email" id="regEmail" placeholder="Email address" class="w-full border p-3 rounded-xl" />
+        <input type="tel" id="regPhone" placeholder="Phone number (optional)" class="w-full border p-3 rounded-xl" />
+        <input type="text" id="regAddress" placeholder="Address (optional)" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="regPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
+        <input type="password" id="regConfirmPassword" placeholder="Confirm Password" class="w-full border p-3 rounded-xl" />
+        <button onclick="handleRegister()" class="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primaryHover transition-colors">Create Account</button>
+      </div>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        Already have an account? 
+        <button onclick="showLoginForm()" class="text-primary font-semibold hover:underline">Login</button>
+      </p>
+    </div>
+    <button onclick="closeModal('accountModal')" class="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">✕</button>
+  </div>
+</div>
+
+  <!-- Toast Message -->
+  <div id="toastMsg" class="toast-msg"></div>
+
+<script src="viewer/prodct.js"></script>
+<script src="products-shared.js"></script>
+<script src="shared-header.js"></script> 
+<script src="products-page.js"></script>
+</body>
+</html>

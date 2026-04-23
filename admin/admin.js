@@ -350,7 +350,51 @@ function renderProductCard(p) {
     </div>
   `;
 }
+// Add this function near the top of admin.js, after your existing helper functions
 
+function compressImage(base64String, maxWidth = 800, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      
+      // Scale down if image is too large
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Convert to compressed base64
+      const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressedBase64);
+    };
+    img.onerror = reject;
+    img.src = base64String;
+  });
+}
+
+async function processImagesForUpload(imageArray) {
+  const processedImages = [];
+  for (const img of imageArray) {
+    try {
+      // Compress the image before uploading
+      const compressed = await compressImage(img, 800, 0.7);
+      processedImages.push(compressed);
+    } catch (e) {
+      console.warn('Could not process image:', e);
+      processedImages.push(img); // Use original if compression fails
+    }
+  }
+  return processedImages;
+}
 // ===============================================
 //             Main Rendering Functions
 // ===============================================
@@ -405,18 +449,53 @@ function updateAddPreviews() {
   updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
 }
 
-document.getElementById('multiImageUpload')?.addEventListener('change', (e) => {
+document.getElementById('multiImageUpload')?.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      addedImages.push(ev.target.result);
-      updateAddPreviews();
-    };
-    reader.readAsDataURL(file);
-  });
+  
+  for (const file of files) {
+    try {
+      const base64 = await fileToBase64(file);
+      // Compress the image
+      const compressed = await compressImage(base64, 800, 0.7);
+      addedImages.push(compressed);
+    } catch (err) {
+      console.error('Error processing image:', err);
+      showToast('Error processing image');
+    }
+  }
+  
+  updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
+  e.target.value = ''; // Allow re-upload
+});
+
+document.getElementById('editMultiImageUpload')?.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  
+  for (const file of files) {
+    try {
+      const base64 = await fileToBase64(file);
+      // Compress the image
+      const compressed = await compressImage(base64, 800, 0.7);
+      editAddedImages.push(compressed);
+    } catch (err) {
+      console.error('Error processing image:', err);
+      showToast('Error processing image');
+    }
+  }
+  
+  updateMultiImagePreviews('editMultiImagePreviews', 'editImagesJsonField', editAddedImages);
   e.target.value = '';
 });
+
+// Helper to convert File to base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => resolve(ev.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 function renderHotProducts() {
   let p = getProducts().filter(p => p.isHot);
   document.getElementById('hotProductsGrid').innerHTML =
@@ -1303,28 +1382,34 @@ document.getElementById('editMultiImageUpload')?.addEventListener('change', (e) 
   });
   e.target.value = '';
 });
-document.getElementById('editForm').addEventListener('submit', (e) => {
+document.getElementById('editForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!window.editingId) return;
 
   let fd = new FormData(e.target);
   
-  // Get current images from the hidden field (which includes existing + newly uploaded)
-  const imagesJson = document.getElementById('editImagesJsonField')?.value || '[]';
-  let images = JSON.parse(imagesJson);
+  // Process images
+  let allImages = [...editAddedImages];
+  const mainImage = fd.get('image');
   
-  // Append URLs from the comma‑separated field
+  if (allImages.length === 0) {
+    allImages = [mainImage || 'https://placehold.co/600x400'];
+  } else if (mainImage && !allImages.includes(mainImage)) {
+    allImages.unshift(mainImage);
+  }
+  
+  // Add URLs from the comma-separated field
   const urlInput = fd.get('imageUrls');
   if (urlInput) {
     let urls = urlInput.split(',').map(u => u.trim()).filter(u => u);
-    images = [...images, ...urls];
+    allImages = [...allImages, ...urls];
   }
   
-  // Fallback: if no images at all, use the main image URL
-  if (!images.length) {
-    const mainImg = fd.get('image') || 'https://placehold.co/600x400';
-    images = [mainImg];
-  }
+  // Compress images
+  const processedImages = await processImagesForUpload(allImages);
+  
+  // Process variants
+  const validVariants = editVariantsList.filter(v => v.type.trim() && v.values.length);
 
   let updated = {
     id: window.editingId,
@@ -1333,9 +1418,9 @@ document.getElementById('editForm').addEventListener('submit', (e) => {
     category: fd.get('category'),
     description: fd.get('description'),
     stock: Number(fd.get('stock')),
-     variants: editVariantsList.filter(v => v.type.trim() && v.values.length),
-    image: fd.get('image') || images[0],   // main image
-    images: images,                         // full array
+    variants: validVariants,
+    image: processedImages[0] || 'https://placehold.co/600x400',
+    images: processedImages,
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand'),
@@ -1345,11 +1430,30 @@ document.getElementById('editForm').addEventListener('submit', (e) => {
     deliveryEstimate: fd.get('deliveryEstimate')
   };
 
+  // Try to update in Supabase
+  try {
+    const client = getSupabase();
+    if (client) {
+      const { error } = await client
+        .from('products')
+        .upsert([updated], { onConflict: 'id' });
+      
+      if (error) {
+        console.error('❌ Error updating in Supabase:', error.message);
+      } else {
+        console.log('✅ Product updated in Supabase!');
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Could not update Supabase:', err.message);
+  }
+
+  // Always update localStorage
   let prods = getProducts();
   let idx = prods.findIndex(p => p.id === window.editingId);
   if (idx !== -1) prods[idx] = updated;
-
   saveProducts(prods);
+  
   closeModal('editModal');
   showToast('Product updated');
   refreshAll();
@@ -1359,6 +1463,23 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   let fd = new FormData(e.target);
   
+  // Get main image
+  const mainImage = fd.get('image') || 'https://placehold.co/600x400';
+  
+  // Process added images (compress them)
+  let allImages = [...addedImages];
+  if (allImages.length === 0) {
+    allImages = [mainImage];
+  } else if (!allImages.includes(mainImage)) {
+    allImages.unshift(mainImage);
+  }
+  
+  // Compress images before saving
+  const processedImages = await processImagesForUpload(allImages);
+  
+  // Process variants
+  const validVariants = variantsList.filter(v => v.type.trim() && v.values.length);
+  
   let newProd = {
     id: genId(),
     name: fd.get('name'),
@@ -1366,12 +1487,12 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     category: fd.get('category'),
     description: fd.get('description') || '',
     stock: Number(fd.get('stock')),
-    image: fd.get('image') || 'https://placehold.co/600x400',
-    images: [fd.get('image') || 'https://placehold.co/600x400'],
+    image: processedImages[0], // First image as main
+    images: processedImages,   // All images as array
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand') || '',
-    variants: [],
+    variants: validVariants,
     os: fd.get('os') || '',
     cpu: fd.get('cpu') || '',
     specs: fd.get('specs') || '',
@@ -1380,19 +1501,26 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
 
   // Try Supabase first
   let savedToCloud = false;
+  console.log('📤 Sending product to Supabase...');
   const result = await addProductToDB(newProd);
   if (result) {
     savedToCloud = true;
+    console.log('✅ Product saved to Supabase successfully!');
+  } else {
+    console.warn('⚠️ Failed to save to Supabase, saving locally only');
   }
 
-  // Always save to localStorage
+  // Always save to localStorage as backup
   let prods = getProducts();
   prods.unshift(newProd);
   saveProducts(prods);
 
+  // Reset form
   e.target.reset();
   addedImages = [];
-  updateMultiImagePreviews();
+  variantsList = [];
+  updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
+  renderVariantsUI('variantsContainer', variantsList);
   
   showToast(savedToCloud ? '✅ Product added to cloud!' : '⚠️ Product saved locally');
   refreshAll();
@@ -1400,12 +1528,9 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
 async function loadAdminFromSupabase() {
   try {
     const client = getSupabase();
-    if (client) {
-      const { data, error } = await client.from('products').select('*');
-      // handle data
-    } else {
-      console.warn('Supabase not available');
-      // fallback to localStorage
+    if (!client) {
+      console.log('⚠️ Supabase not available, using localStorage only');
+      return null;
     }
     
     const { data: products, error } = await client
@@ -1413,12 +1538,18 @@ async function loadAdminFromSupabase() {
       .select('*')
       .order('created_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error loading from Supabase:', error.message);
+      return null;
+    }
     
     if (products && products.length > 0) {
       localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(products));
       console.log(`✅ Admin loaded ${products.length} products from Supabase`);
       return products;
+    } else {
+      console.log('ℹ️ No products found in Supabase, using defaults');
+      return null;
     }
   } catch (e) {
     console.log('⚠️ Using localStorage for admin:', e.message);
@@ -2267,7 +2398,12 @@ async function init() {
 
 
 
-  await loadAdminFromSupabase();
+  const cloudProducts = await loadAdminFromSupabase();
+if (cloudProducts) {
+  console.log('📦 Loaded from cloud');
+} else {
+  console.log('📦 Using local storage');
+}
   refreshAll();
 
 document.getElementById('multiImageUpload')?.addEventListener('change', (e) => {

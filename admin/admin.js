@@ -1355,21 +1355,10 @@ document.getElementById('editForm').addEventListener('submit', (e) => {
   refreshAll();
 });
 
-document.getElementById('adminForm').addEventListener('submit', (e) => {
+document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   let fd = new FormData(e.target);
-  const imagesJson = document.getElementById('imagesJsonField')?.value || '[]';
-  let images = JSON.parse(imagesJson);
-  const urlInput = fd.get('imageUrls');
-  if (urlInput) {
-    let urls = urlInput.split(',').map(u => u.trim()).filter(u => u);
-    images = [...images, ...urls]; // Combine uploads and URLs
-  }
-  if (!images.length) {
-    const mainImg = fd.get('image') || 'https://placehold.co/600x400';
-    images = [mainImg];
-  }
-
+  
   let newProd = {
     id: genId(),
     name: fd.get('name'),
@@ -1377,25 +1366,37 @@ document.getElementById('adminForm').addEventListener('submit', (e) => {
     category: fd.get('category'),
     description: fd.get('description') || '',
     stock: Number(fd.get('stock')),
-    image: fd.get('image') || images[0], // Keep main image for backward compatibility
-    images: images, // Save the full array here
+    image: fd.get('image') || 'https://placehold.co/600x400',
+    images: [fd.get('image') || 'https://placehold.co/600x400'],
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand'),
-     variants: variantsList.filter(v => v.type.trim() && v.values.length),
+    variants: [],
     os: fd.get('os'),
     cpu: fd.get('cpu'),
     specs: fd.get('specs'),
     deliveryEstimate: fd.get('deliveryEstimate')
   };
 
-  let prods = getProducts();
-  prods.unshift(newProd);
-  saveProducts(prods);
+  // ✅ Save to Supabase FIRST
+  const result = await addProductToDB(newProd);
+  
+  if (result) {
+    // Also save to localStorage as backup
+    let prods = getProducts();
+    prods.unshift(newProd);
+    saveProducts(prods);
+    
+    showToast('✅ Product added to cloud database!');
+  } else {
+    // Fallback to localStorage only
+    let prods = getProducts();
+    prods.unshift(newProd);
+    saveProducts(prods);
+    showToast('⚠️ Product saved locally only');
+  }
+  
   e.target.reset();
-  addedImages = [];
-  updateMultiImagePreviews();
-  showToast('Product added');
   refreshAll();
 });
 

@@ -107,27 +107,61 @@ function normalizeProductImages(products) {
 //               PRODUCT FUNCTIONS
 // ===============================================
 
-async function getProducts() {
-  // Try Supabase first
-  try {
-    const supabaseProducts = await fetchProductsFromDB();
-    if (supabaseProducts && supabaseProducts.length > 0) {
-      // Cache in localStorage as backup
-      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(supabaseProducts));
-      return supabaseProducts;
-    }
-  } catch (e) {
-    console.log('⚠️ Supabase fetch failed, using localStorage');
+// Cache variable
+let _cachedProducts = null;
+
+function getProducts() {
+  // Return from cache first (fast)
+  if (_cachedProducts && _cachedProducts.length > 0) {
+    return _cachedProducts;
   }
   
-  // Fallback to localStorage
+  // Try localStorage
   let p = getStorage(STORAGE.PRODUCTS);
-  if (!p || p.length === 0) {
-    const normalized = normalizeProductImages(DEFAULT_PRODUCTS);
-    setStorage(STORAGE.PRODUCTS, normalized);
-    return normalized;
+  if (p && p.length > 0) {
+    _cachedProducts = p;
+    return p;
   }
-  return p;
+  
+  // Fallback to defaults
+  const normalized = normalizeProductImages(DEFAULT_PRODUCTS);
+  setStorage(STORAGE.PRODUCTS, normalized);
+  _cachedProducts = normalized;
+  return normalized;
+}
+
+// This runs on startup to load from Supabase
+async function loadProductsFromSupabase() {
+  try {
+    console.log('📡 Fetching products from Supabase...');
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Supabase error:', error.message);
+      return;
+    }
+    
+    if (products && products.length > 0) {
+      console.log(`✅ Loaded ${products.length} products from Supabase!`);
+      _cachedProducts = products;
+      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(products));
+      
+      // Re-render the UI
+      renderAllProducts();
+      renderHotProducts();
+      renderNewProducts();
+      renderDealsOfToday();
+      renderFeaturedProduct();
+      renderRecentlyViewed();
+    } else {
+      console.log('⚠️ No products in Supabase, using defaults');
+    }
+  } catch (e) {
+    console.error('❌ Failed to load from Supabase:', e);
+  }
 }
 
 function saveProducts(prods) {
@@ -2643,6 +2677,9 @@ function init() {
   renderWishlistModal();
 renderDealsOfToday();
 updateAccountUI();
+loadProductsFromSupabase().then(() => {
+    console.log('✅ ShopBoss connected to Supabase! 🚀');
+  });
 
 // Add these new initializations:
 setTimeout(() => {

@@ -1,10 +1,11 @@
 // supabase-api.js - ShopBoss Database Operations
+// Uses shopbossSupabase from supabase-config.js
 
 // ===============================================
 //               PRODUCTS
 // ===============================================
 async function fetchProducts() {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('products')
     .select('*')
     .order('created_at', { ascending: false });
@@ -13,11 +14,11 @@ async function fetchProducts() {
     console.error('Error fetching products:', error);
     return [];
   }
-  return data;
+  return data || [];
 }
 
 async function addProductToDB(product) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('products')
     .insert([product])
     .select();
@@ -26,11 +27,11 @@ async function addProductToDB(product) {
     console.error('Error adding product:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 async function updateProductInDB(product) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('products')
     .update(product)
     .eq('id', product.id)
@@ -40,11 +41,11 @@ async function updateProductInDB(product) {
     console.error('Error updating product:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 async function deleteProductFromDB(productId) {
-  const { error } = await supabase
+  const { error } = await shopbossSupabase
     .from('products')
     .delete()
     .eq('id', productId);
@@ -60,7 +61,7 @@ async function deleteProductFromDB(productId) {
 //               ORDERS
 // ===============================================
 async function fetchOrders() {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('orders')
     .select('*')
     .order('created_at', { ascending: false });
@@ -69,11 +70,11 @@ async function fetchOrders() {
     console.error('Error fetching orders:', error);
     return [];
   }
-  return data;
+  return data || [];
 }
 
 async function createOrder(order) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('orders')
     .insert([{
       id: order.id,
@@ -91,11 +92,11 @@ async function createOrder(order) {
     console.error('Error creating order:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 async function updateOrderStatusInDB(orderId, status) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('orders')
     .update({ status })
     .eq('id', orderId)
@@ -105,14 +106,14 @@ async function updateOrderStatusInDB(orderId, status) {
     console.error('Error updating order:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 // ===============================================
 //               REVIEWS
 // ===============================================
 async function fetchReviews(productId) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('reviews')
     .select('*')
     .eq('product_id', productId)
@@ -122,11 +123,11 @@ async function fetchReviews(productId) {
     console.error('Error fetching reviews:', error);
     return [];
   }
-  return data;
+  return data || [];
 }
 
 async function addReviewToDB(review) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('reviews')
     .insert([{
       id: review.id,
@@ -141,14 +142,14 @@ async function addReviewToDB(review) {
     console.error('Error adding review:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 // ===============================================
 //               DEALS
 // ===============================================
 async function fetchDeals() {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('deals')
     .select('*');
   
@@ -156,11 +157,11 @@ async function fetchDeals() {
     console.error('Error fetching deals:', error);
     return [];
   }
-  return data;
+  return data || [];
 }
 
 async function saveDealToDB(productId, discount) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('deals')
     .upsert({ product_id: productId, discount }, { onConflict: 'product_id' })
     .select();
@@ -169,11 +170,11 @@ async function saveDealToDB(productId, discount) {
     console.error('Error saving deal:', error);
     return null;
   }
-  return data[0];
+  return data ? data[0] : null;
 }
 
 async function removeDealFromDB(productId) {
-  const { error } = await supabase
+  const { error } = await shopbossSupabase
     .from('deals')
     .delete()
     .eq('product_id', productId);
@@ -189,7 +190,7 @@ async function removeDealFromDB(productId) {
 //               WISHLIST
 // ===============================================
 async function fetchWishlist(userId) {
-  const { data, error } = await supabase
+  const { data, error } = await shopbossSupabase
     .from('wishlists')
     .select('product_id')
     .eq('user_id', userId);
@@ -198,31 +199,28 @@ async function fetchWishlist(userId) {
     console.error('Error fetching wishlist:', error);
     return [];
   }
-  return data.map(w => w.product_id);
+  return data ? data.map(w => w.product_id) : [];
 }
 
 async function toggleWishlistInDB(userId, productId) {
-  // Check if exists
-  const { data: existing } = await supabase
+  const { data: existing } = await shopbossSupabase
     .from('wishlists')
     .select('*')
     .eq('user_id', userId)
     .eq('product_id', productId)
-    .single();
+    .maybeSingle();
   
   if (existing) {
-    // Remove
-    await supabase
+    await shopbossSupabase
       .from('wishlists')
       .delete()
       .eq('user_id', userId)
       .eq('product_id', productId);
-    return false; // removed
+    return false;
   } else {
-    // Add
-    await supabase
+    await shopbossSupabase
       .from('wishlists')
       .insert([{ user_id: userId, product_id: productId }]);
-    return true; // added
+    return true;
   }
 }

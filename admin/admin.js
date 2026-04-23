@@ -1400,9 +1400,12 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
 async function loadAdminFromSupabase() {
   try {
     const client = getSupabase();
-    if (!client) {
-      console.log('⚠️ Supabase not available');
-      return null;
+    if (client) {
+      const { data, error } = await client.from('products').select('*');
+      // handle data
+    } else {
+      console.warn('Supabase not available');
+      // fallback to localStorage
     }
     
     const { data: products, error } = await client

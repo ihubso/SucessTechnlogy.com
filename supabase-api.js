@@ -1,55 +1,75 @@
 // supabase-api.js - ShopBoss Database Operations
 // Uses getSupabase() from supabase-config.js
 
+// supabase-api.js - With better error handling
+
 async function fetchProductsFromDB() {
   const client = getSupabase();
-  if (!client) return null;
-  
-  const { data, error } = await client
-    .from('products')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error('❌ Error:', error.message);
+  if (!client) {
+    console.warn('⚠️ Supabase not available, skipping cloud fetch');
     return null;
   }
-  console.log(`✅ Fetched ${data.length} products from Supabase`);
-  return data;
+  
+  try {
+    const { data, error } = await client
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Error fetching products:', error.message);
+      return null;
+    }
+    
+    console.log(`✅ Fetched ${data.length} products from Supabase`);
+    return data;
+  } catch (err) {
+    console.error('❌ Unexpected error:', err.message);
+    return null;
+  }
 }
 
 async function addProductToDB(product) {
   const client = getSupabase();
-  if (!client) return null;
-  
-  const { data, error } = await client
-    .from('products')
-    .insert([{
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      category: product.category || 'phone',
-      description: product.description || '',
-      stock: product.stock || 0,
-      image: product.image || 'https://placehold.co/600x400',
-      images: product.images || [product.image],
-      isHot: product.isHot || false,
-      isNew: product.isNew || false,
-      brand: product.brand || '',
-      os: product.os || '',
-      cpu: product.cpu || '',
-      specs: product.specs || '',
-      variants: product.variants || [],
-      deliveryEstimate: product.deliveryEstimate || ''
-    }])
-    .select();
-  
-  if (error) {
-    console.error('❌ Error:', error.message);
+  if (!client) {
+    console.warn('⚠️ Supabase not available, saving to localStorage only');
     return null;
   }
-  console.log('✅ Product saved to Supabase!');
-  return data[0];
+  
+  try {
+    const { data, error } = await client
+      .from('products')
+      .insert([{
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        category: product.category || 'phone',
+        description: product.description || '',
+        stock: product.stock || 0,
+        image: product.image || 'https://placehold.co/600x400',
+        images: product.images || [product.image],
+        isHot: product.isHot || false,
+        isNew: product.isNew || false,
+        brand: product.brand || '',
+        os: product.os || '',
+        cpu: product.cpu || '',
+        specs: product.specs || '',
+        variants: product.variants || [],
+        deliveryEstimate: product.deliveryEstimate || ''
+      }])
+      .select();
+    
+    if (error) {
+      console.error('❌ Error saving to Supabase:', error.message);
+      return null;
+    }
+    
+    console.log('✅ Product saved to Supabase!');
+    return data[0];
+  } catch (err) {
+    console.error('❌ Error:', err.message);
+    return null;
+  }
 }
 
 async function createOrderInDB(order) {

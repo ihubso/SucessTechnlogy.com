@@ -1370,36 +1370,68 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     images: [fd.get('image') || 'https://placehold.co/600x400'],
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
-    brand: fd.get('brand'),
+    brand: fd.get('brand') || '',
     variants: [],
-    os: fd.get('os'),
-    cpu: fd.get('cpu'),
-    specs: fd.get('specs'),
-    deliveryEstimate: fd.get('deliveryEstimate')
+    os: fd.get('os') || '',
+    cpu: fd.get('cpu') || '',
+    specs: fd.get('specs') || '',
+    deliveryEstimate: fd.get('deliveryEstimate') || ''
   };
 
-  // ✅ Save to Supabase FIRST
-  const result = await addProductToDB(newProd);
-  
-  if (result) {
-    // Also save to localStorage as backup
-    let prods = getProducts();
-    prods.unshift(newProd);
-    saveProducts(prods);
+  // ✅ Try Supabase first
+  let savedToCloud = false;
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .insert([newProd])
+      .select();
     
-    showToast('✅ Product added to cloud database!');
+    if (error) throw error;
+    savedToCloud = true;
+    console.log('✅ Product saved to Supabase!');
+  } catch (err) {
+    console.error('⚠️ Could not save to Supabase:', err.message);
+  }
+
+  // Always save to localStorage as backup
+  let prods = getProducts();
+  prods.unshift(newProd);
+  saveProducts(prods);
+  
+  // Clear cache
+  _cachedProducts = prods;
+
+  e.target.reset();
+  addedImages = [];
+  updateMultiImagePreviews();
+  
+  if (savedToCloud) {
+    showToast('✅ Product added to cloud!');
   } else {
-    // Fallback to localStorage only
-    let prods = getProducts();
-    prods.unshift(newProd);
-    saveProducts(prods);
-    showToast('⚠️ Product saved locally only');
+    showToast('⚠️ Product saved locally');
   }
   
-  e.target.reset();
   refreshAll();
 });
-
+async function loadAdminFromSupabase() {
+  try {
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    if (products && products.length > 0) {
+      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(products));
+      console.log(`✅ Admin loaded ${products.length} products from Supabase`);
+      return products;
+    }
+  } catch (e) {
+    console.log('⚠️ Using localStorage for admin');
+  }
+  return null;
+}
 document.getElementById('imageUpload')?.addEventListener('change', (e) => {
   let file = e.target.files[0];
   if (file) {
@@ -2242,7 +2274,8 @@ function init() {
 
 
 
-
+  await loadAdminFromSupabase();
+  refreshAll();
 
 document.getElementById('multiImageUpload')?.addEventListener('change', (e) => {
   const files = Array.from(e.target.files);

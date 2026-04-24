@@ -357,7 +357,16 @@
         </div>
         <textarea name="description" rows="2" placeholder="Description" class="w-full border p-3 rounded-xl"></textarea>
         <input name="stock" type="number" min="0" placeholder="Stock quantity" required class="w-full border p-3 rounded-xl" />
-        <input name="image" type="url" placeholder="Image URL" class="w-full border p-3 rounded-xl" />
+       <div>
+          <label class="block text-sm font-medium mb-1 text-slate-600">Main Product Image</label>
+          <input type="file" id="imageUpload" accept="image/*" class="mt-1 mb-2" />
+          <div id="mainImagePreview" class="mt-2">
+            <img id="mainImagePreviewImg" src="" class="w-32 h-32 object-cover rounded-xl hidden" alt="Main image preview" />
+          </div>
+          <input name="image" type="hidden" id="mainImageField" value="" />
+          <input name="imageUrl" type="url" placeholder="Or paste image URL here" class="w-full border p-3 rounded-xl mt-2" 
+                onchange="if(this.value) { document.getElementById('mainImageField').value = this.value; document.getElementById('mainImagePreviewImg').src = this.value; document.getElementById('mainImagePreviewImg').classList.remove('hidden'); }" />
+        </div>
         <div>
           <label class="block text-sm font-medium mb-1 text-slate-600">Additional Image URLs (comma-separated)</label>
           <input name="imageUrls" placeholder="https://..., https://..." class="w-full border border-slate-200 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40" />
@@ -829,8 +838,14 @@ Sun: Closed</p>
       </div>
 
       <div>
-        <label class="block text-sm font-medium mb-1 text-slate-600">Image URL</label>
-        <input name="image" placeholder="Image URL" required class="w-full border border-slate-200 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        <label class="block text-sm font-medium mb-1 text-slate-600">Main Product Image</label>
+        <input type="file" id="editImageUpload" accept="image/*" class="mt-1 mb-2" />
+        <div id="editMainImagePreview" class="mt-2">
+          <img id="editMainImagePreviewImg" src="" class="w-32 h-32 object-cover rounded-xl hidden" alt="Main image preview" />
+        </div>
+        <input name="image" type="hidden" id="editMainImageField" value="" />
+        <input name="imageUrl" type="url" placeholder="Or paste image URL here" class="w-full border border-slate-200 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40" 
+              onchange="if(this.value) { document.getElementById('editMainImageField').value = this.value; document.getElementById('editMainImagePreviewImg').src = this.value; document.getElementById('editMainImagePreviewImg').classList.remove('hidden'); }" />
       </div>
       <div>
         <label class="block text-sm font-medium mb-1 text-slate-600">Additional Image URLs (comma-separated)</label>

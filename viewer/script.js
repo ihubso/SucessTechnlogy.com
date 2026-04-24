@@ -59,7 +59,17 @@ async function getCart() {
 }
 async function saveCart(cart) { 
   const sessionKey = getUserSessionKey();
-  await saveCartToDB(sessionKey, cart); 
+  
+  // Ensure each cart item has required fields
+  const safeCart = cart.map(item => ({
+    product_id: item.product_id || item.id || '',
+    name: item.name || 'Product',
+    price: item.price || 0,
+    qty: item.qty || 1,
+    image: item.image || 'https://placehold.co/600x400'
+  })).filter(item => item.product_id); // Remove items without product_id
+  
+  await saveCartToDB(sessionKey, safeCart); 
   renderCart(); 
 }
 
@@ -94,20 +104,25 @@ async function mergeGuestDataToUser(userId) {
         item.product_id === guestItem.product_id
       );
       if (existingIndex >= 0) {
-        mergedCart[existingIndex].qty += guestItem.qty;
+        mergedCart[existingIndex].qty = (mergedCart[existingIndex].qty || 0) + (guestItem.qty || 1);
       } else {
-        mergedCart.push(guestItem);
+        mergedCart.push({
+          ...guestItem,
+          session_id: userSessionKey
+        });
       }
     });
     
-    await saveCartToDB(userSessionKey, mergedCart.map(item => ({
-      session_id: userSessionKey,
-      product_id: item.product_id,
-      name: item.name,
-      price: item.price,
-      qty: item.qty,
-      image: item.image
-    })));
+    // Save merged cart to user session
+    const safeCart = mergedCart.map(item => ({
+      product_id: item.product_id || '',
+      name: item.name || 'Product',
+      price: item.price || 0,
+      qty: item.qty || 1,
+      image: item.image || ''
+    })).filter(item => item.product_id);
+    
+    await saveCartToDB(userSessionKey, safeCart);
     
     // Clear guest cart
     await saveCartToDB(guestSessionId, []);
@@ -941,19 +956,31 @@ window.addToCart = async function (id, qty = 1, variants = {}) {
   if (!product || product.stock <= 0) { showToast("Out of stock"); return; }
   
   let cart = await getCart();
-  let existing = cart.find(i => i.id === id && JSON.stringify(i.variants) === JSON.stringify(variants));
+  let existing = cart.find(i => (i.product_id === id || i.id === id));
   
   if (existing) {
-    if (existing.qty + qty > product.stock) { showToast(`Only ${product.stock} left`); return; }
-    existing.qty += qty;
+    if ((existing.qty || 0) + qty > product.stock) { 
+      showToast(`Only ${product.stock} left`); 
+      return; 
+    }
+    existing.qty = (existing.qty || 0) + qty;
   } else {
-    if (qty > product.stock) { showToast(`Only ${product.stock} left`); return; }
-    cart.push({ id, name: product.name, price: product.price, qty, image: product.image, variants: variants || {} });
+    if (qty > product.stock) { 
+      showToast(`Only ${product.stock} left`); 
+      return; 
+    }
+    cart.push({ 
+      product_id: id,
+      id: id, 
+      name: product.name, 
+      price: product.price, 
+      qty, 
+      image: product.image
+    });
   }
   await saveCart(cart);
   showToast(`${product.name} added`);
 };
-
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
   showToast("Link copied!");

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>ShopBoss · Ultimate Store + Admin Dashboard</title>
+  <title>Sucess Technology · Ultimate Store + Admin Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,7 +25,227 @@
 #editModal {
   padding: 2rem;
 }
+/* Admin Login Overlay */
+.admin-login-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
 
+.admin-login-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.admin-login-card {
+  background: white;
+  border-radius: 2rem;
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.5s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.admin-login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.admin-login-logo {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #e60012, #ff4444);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 1.5rem;
+  margin: 0 auto 1rem;
+  box-shadow: 0 8px 20px rgba(230, 0, 18, 0.3);
+}
+
+.admin-login-header h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 0.5rem;
+}
+
+.admin-login-header p {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+/* Loading Overlay (same as main site) */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.98);
+  backdrop-filter: blur(10px);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+.loading-overlay.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loading-content {
+  text-align: center;
+  padding: 2rem;
+  max-width: 500px;
+  width: 90%;
+}
+
+.loading-logo {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #e60012, #ff4444);
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 2rem;
+  margin: 0 auto 2rem;
+  animation: logoPulse 2s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.loading-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.loading-subtitle {
+  font-size: 0.875rem;
+  color: #999;
+  margin-bottom: 2rem;
+}
+
+.progress-container {
+  background: #333;
+  border-radius: 20px;
+  height: 8px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #e60012, #ff4444);
+  background-size: 200% 100%;
+  border-radius: 20px;
+  transition: width 0.5s ease;
+}
+/* Success message animations */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 200px;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 200px;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+    max-height: 0;
+  }
+}
+
+/* Button loading animation */
+#addProductSubmitBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+/* Smooth transitions for all states */
+#btnText, #btnLoading, #btnSuccess {
+  transition: opacity 0.3s ease;
+}
+.progress-percentage {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e60012;
+  text-align: right;
+  margin-bottom: 0.5rem;
+}
+
+.progress-steps {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding: 0 10px;
+}
+
+.progress-step {
+  font-size: 0.7rem;
+  color: #666;
+  text-align: center;
+  flex: 1;
+  transition: color 0.3s ease;
+}
+
+.progress-step.completed {
+  color: #e60012;
+  font-weight: 600;
+}
+
+.progress-step.current {
+  color: #fff;
+  font-weight: 600;
+}
+
+.loading-text {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: #999;
+}
+
+/* Admin password toggle */
+#adminPasswordToggleIcon {
+  transition: transform 0.2s;
+}
 /* Modal box */
 .bg-white.rounded-3xl {
   max-height: calc(100vh - 4rem);
@@ -100,6 +320,88 @@
   </style>
 </head>
 <body>
+    <!-- Admin Loading Overlay -->
+  <div class="loading-overlay" id="adminLoadingOverlay">
+    <div class="loading-content">
+      <div class="loading-logo">SB</div>
+      <h2 class="loading-title">Admin <span style="color:#e60012;">Panel</span></h2>
+      <p class="loading-subtitle">Loading your dashboard<span class="dots"></span></p>
+      
+      <div class="progress-percentage">
+        <span id="adminProgressPercent">0%</span>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar" id="adminProgressBar" style="width: 0%;"></div>
+      </div>
+      
+      <div class="progress-steps">
+        <div class="progress-step" id="adminStep1">Connecting</div>
+        <div class="progress-step" id="adminStep2">Loading Products</div>
+        <div class="progress-step" id="adminStep3">Loading Orders</div>
+        <div class="progress-step" id="adminStep4">Setting Up</div>
+        <div class="progress-step" id="adminStep5">Ready!</div>
+      </div>
+      
+      <p class="loading-text" id="adminLoadingStatus">Initializing admin panel<span class="dots"></span></p>
+    </div>
+  </div>
+
+  <!-- Admin Login Overlay -->
+  <div class="admin-login-overlay" id="adminLoginOverlay">
+    <div class="admin-login-card">
+      <div class="admin-login-header">
+        <div class="admin-login-logo">SB</div>
+        <h2>Admin Login</h2>
+        <p>Enter your credentials to access the dashboard</p>
+      </div>
+      
+      <div id="adminLoginError" class="hidden mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 flex items-center gap-2">
+        <i class="fas fa-exclamation-circle"></i>
+        <span id="adminLoginErrorMsg">Invalid credentials</span>
+      </div>
+      
+      <form id="adminLoginForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2 text-slate-600">Username</label>
+          <div class="relative">
+            <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+            <input type="text" id="adminUsername" placeholder="Enter admin username" required 
+                  class="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+          </div>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-2 text-slate-600">Password</label>
+          <div class="relative">
+            <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+            <input type="password" id="adminPassword" placeholder="Enter admin password" required 
+                  class="w-full pl-11 pr-12 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+            <button type="button" onclick="toggleAdminPassword()" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <i id="adminPasswordToggleIcon" class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="adminRemember" class="w-4 h-4 accent-primary" />
+          <label for="adminRemember" class="text-sm text-slate-500">Remember me</label>
+        </div>
+        
+        <button type="submit" id="adminLoginBtn" class="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primaryHover transition-all relative overflow-hidden">
+          <span id="adminLoginBtnText">Login to Admin Panel</span>
+          <span id="adminLoginBtnLoading" class="hidden absolute inset-0 flex items-center justify-center bg-primary">
+            <svg class="animate-spin h-5 w-5 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Authenticating...
+          </span>
+        </button>
+      </form>
+      
+      <p class="text-center text-xs text-slate-400 mt-4">Default: admin / admin123</p>
+    </div>
+  </div>
 <div class="sidebar p-5">
   <div class="flex items-center gap-2 mb-8 px-2">
     <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold">SB</div>
@@ -146,7 +448,7 @@
   </nav>
 
   <div class="mt-8 text-xs text-slate-400 border-t pt-4 text-center">
-    ShopBoss v3.0 (Wishlist + Reviews + Pagination)
+    Sucess Technology v3.0 (Wishlist + Reviews + Pagination)
   </div>
 </div>
 
@@ -331,62 +633,161 @@
   </div>
   <!-- ADD PRODUCT SECTION -->
   <div id="addProductSection" class="admin-panel-section p-6">
-    <div class="bg-white rounded-2xl p-6 max-w-2xl mx-auto shadow">
-      <h3 class="text-xl font-bold mb-4">➕ Add New Product</h3>
-      <form id="adminForm" class="space-y-4">
-        <input name="name" placeholder="Product name" required class="w-full border p-3 rounded-xl" />
-        <input name="price" type="number" step="0.01" placeholder="Price" required class="w-full border p-3 rounded-xl" />
-        <select name="category" required class="w-full border p-3 rounded-xl">
-          <option value="">Select category</option>
-          <option value="phone">📱 Phone</option>
-          <option value="audio">🎧 Audio</option>
-          <option value="tablet">📟 Tablet</option>
-          <option value="wearable">⌚ Wearable</option>
-          <option value="power">🔋 Power</option>
-        </select>
-        <input name="brand" placeholder="Brand" class="w-full border p-3 rounded-xl" />
-        <input name="os" placeholder="Operating System" class="w-full border p-3 rounded-xl" />
-        <input name="cpu" placeholder="CPU Model" class="w-full border p-3 rounded-xl" />
-        <input name="specs" placeholder="Key specs" class="w-full border p-3 rounded-xl" />
-        <input name="deliveryEstimate" placeholder="Delivery estimate" class="w-full border p-3 rounded-xl" />
-        <!-- Variants Section -->
-        <div class="border-t pt-4 mt-4">
-          <label class="block text-sm font-medium mb-2">🎨 Product Variants (Size, Color, etc.)</label>
-          <div id="variantsContainer"></div>
-          <button type="button" id="addVariantBtn" class="mt-2 text-sm bg-slate-100 px-4 py-2 rounded-full">➕ Add Variant</button>
+    <div class="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto">
+      
+      <!-- LEFT: Add Product Form -->
+      <div class="bg-white rounded-2xl p-6 flex-1 shadow">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xl font-bold">➕ Add New Product</h3>
+          <span id="addProductStatus" class="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-500">Ready</span>
         </div>
-        <textarea name="description" rows="2" placeholder="Description" class="w-full border p-3 rounded-xl"></textarea>
-        <input name="stock" type="number" min="0" placeholder="Stock quantity" required class="w-full border p-3 rounded-xl" />
-       <div>
-          <label class="block text-sm font-medium mb-1 text-slate-600">Main Product Image</label>
-          <input type="file" id="imageUpload" accept="image/*" class="mt-1 mb-2" />
-          <div id="mainImagePreview" class="mt-2">
-            <img id="mainImagePreviewImg" src="" class="w-32 h-32 object-cover rounded-xl hidden" alt="Main image preview" />
+        
+        <!-- Success Message (Hidden by default) -->
+        <div id="addProductSuccess" class="hidden mb-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+              <i class="fas fa-check text-white"></i>
+            </div>
+            <div>
+              <p class="font-bold text-green-800">Product Added Successfully! 🎉</p>
+              <p id="successProductName" class="text-sm text-green-600"></p>
+            </div>
+            <button onclick="hideAddSuccess()" class="ml-auto text-green-500 hover:text-green-700">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+        
+        <form id="adminForm" class="space-y-4">
+          <input name="name" placeholder="Product name" required class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+          
+          <div class="grid grid-cols-2 gap-3">
+            <input name="price" type="number" step="0.01" placeholder="Price" required class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+            <select name="category" required class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all">
+              <option value="">Select category</option>
+              <option value="phone">📱 Phone</option>
+              <option value="audio">🎧 Audio</option>
+              <option value="tablet">📟 Tablet</option>
+              <option value="wearable">⌚ Wearable</option>
+              <option value="power">🔋 Power</option>
+              <option value="laptop">💻 Laptop</option>
+              <option value="gaming">🎮 Gaming</option>
+              <option value="camera">📷 Camera</option>
+              <option value="storage">💾 Storage</option>
+              <option value="accessory">🧩 Accessory</option>
+            </select>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-3">
+            <input name="brand" placeholder="Brand" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+            <input name="os" placeholder="Operating System" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+          </div>
+          
+          <div class="grid grid-cols-2 gap-3">
+            <input name="cpu" placeholder="CPU Model" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+            <input name="specs" placeholder="Key specs" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+          </div>
+          
+          <input name="deliveryEstimate" placeholder="Delivery estimate (e.g., 3-5 business days)" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+          
+          <!-- Variants Section -->
+          <div class="border-t pt-4 mt-4">
+            <label class="block text-sm font-medium mb-2">🎨 Product Variants (Size, Color, etc.)</label>
+            <div id="variantsContainer"></div>
+            <button type="button" id="addVariantBtn" class="mt-2 text-sm bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-full transition-colors">➕ Add Variant</button>
+          </div>
+          
+          <textarea name="description" rows="2" placeholder="Description" class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"></textarea>
+          
+          <div class="grid grid-cols-2 gap-3">
+            <input name="stock" type="number" min="0" placeholder="Stock quantity" required class="w-full border p-3 rounded-xl focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all" />
+            
+            <div class="flex gap-4 items-center pt-2">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="isHot" class="w-5 h-5 accent-primary" /> 
+                <span>🔥 Hot product</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="isNew" class="w-5 h-5 accent-primary" /> 
+                <span>✨ New product</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Submit Button with Loading State -->
+          <button type="submit" id="addProductSubmitBtn" class="bg-primary text-white py-4 rounded-xl w-full font-bold hover:bg-primaryHover transition-all relative overflow-hidden group">
+            <span id="btnText" class="flex items-center justify-center gap-2">
+              <i class="fas fa-plus-circle"></i> Add Product
+            </span>
+            <span id="btnLoading" class="hidden absolute inset-0 flex items-center justify-center bg-primary">
+              <svg class="animate-spin h-5 w-5 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Saving...
+            </span>
+            <span id="btnSuccess" class="hidden absolute inset-0 flex items-center justify-center bg-green-500">
+              <i class="fas fa-check-circle text-xl mr-2"></i> Added Successfully!
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <!-- RIGHT: Image Upload & Preview Panel -->
+      <div class="bg-white rounded-2xl p-6 w-full lg:w-96 shadow">
+        <h3 class="text-xl font-bold mb-4">🖼️ Product Images</h3>
+        
+        <!-- Main Image -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium mb-2 text-slate-600">Main Product Image</label>
+          <input type="file" id="imageUpload" accept="image/*" class="w-full text-sm mb-3" />
+          <div id="mainImagePreview" class="mb-3">
+            <img id="mainImagePreviewImg" src="" class="w-full h-48 object-cover rounded-xl hidden border" alt="Main image preview" />
+            <div id="mainImagePlaceholder" class="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-300">
+              <span class="text-slate-400 text-sm">No main image</span>
+            </div>
           </div>
           <input name="image" type="hidden" id="mainImageField" value="" />
-          <input name="imageUrl" type="url" placeholder="Or paste image URL here" class="w-full border p-3 rounded-xl mt-2" 
-                onchange="if(this.value) { document.getElementById('mainImageField').value = this.value; document.getElementById('mainImagePreviewImg').src = this.value; document.getElementById('mainImagePreviewImg').classList.remove('hidden'); }" />
+          <input name="imageUrl" type="url" placeholder="Or paste image URL here" class="w-full border p-3 rounded-xl text-sm" 
+                onchange="if(this.value) { document.getElementById('mainImageField').value = this.value; document.getElementById('mainImagePreviewImg').src = this.value; document.getElementById('mainImagePreviewImg').classList.remove('hidden'); document.getElementById('mainImagePlaceholder').classList.add('hidden'); }" />
         </div>
+
+        <!-- Additional Images -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium mb-2 text-slate-600">Additional Images</label>
+          <input type="file" id="multiImageUpload" accept="image/*" multiple class="w-full text-sm mb-3" />
+          <div id="multiImagePreviews" class="grid grid-cols-3 gap-2"></div>
+          <input type="hidden" name="imagesJson" id="imagesJsonField" value="[]" />
+        </div>
+
+        <!-- URL Images -->
         <div>
-          <label class="block text-sm font-medium mb-1 text-slate-600">Additional Image URLs (comma-separated)</label>
-          <input name="imageUrls" placeholder="https://..., https://..." class="w-full border border-slate-200 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          <label class="block text-sm font-medium mb-2 text-slate-600">Additional Image URLs</label>
+          <input name="imageUrls" placeholder="https://..., https://..." class="w-full border border-slate-200 p-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          <p class="text-xs text-slate-400 mt-1">Separate multiple URLs with commas</p>
         </div>
-          <div>
-            <label class="block text-sm font-medium mb-1">🖼️ Additional Images (multi‑select)</label>
-            <input type="file" id="multiImageUpload" accept="image/*" multiple class="mt-1" />
-            <div id="multiImagePreviews" class="flex flex-wrap gap-2 mt-3"></div>
-            <input type="hidden" name="imagesJson" id="imagesJsonField" value="[]" />
+
+        <!-- Live Preview -->
+        <div class="mt-6 pt-6 border-t">
+          <h4 class="text-sm font-bold text-slate-500 uppercase mb-3">📱 Live Preview</h4>
+          <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-4 border">
+            <div class="w-full aspect-square bg-white rounded-xl flex items-center justify-center mb-3 border overflow-hidden">
+              <img id="previewMainImage" src="" class="w-full h-full object-contain hidden" />
+              <span id="previewPlaceholder" class="text-slate-300 text-4xl">📷</span>
+            </div>
+            <div id="previewInfo">
+              <p class="text-xs text-slate-400 uppercase font-bold">Brand</p>
+              <p id="previewName" class="font-bold text-sm truncate">Product Name</p>
+              <p id="previewPrice" class="text-primary font-bold text-lg">FCFA 0.00</p>
+              <p id="previewStock" class="text-xs text-slate-500">Stock: 0</p>
+              <div class="flex gap-1 mt-1">
+                <span id="previewHotBadge" class="hidden text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full">🔥 HOT</span>
+                <span id="previewNewBadge" class="hidden text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">✨ NEW</span>
+              </div>
+            </div>
           </div>
-
-        <div class="flex gap-4">
-          <label><input type="checkbox" name="isHot" /> 🔥 Hot product</label>
-          <label><input type="checkbox" name="isNew" /> ✨ New product</label>
         </div>
-
-        <button type="submit" class="bg-primary text-white py-3 rounded-xl w-full font-bold">
-          Add Product
-        </button>
-      </form>
+      </div>
     </div>
   </div>
 <!-- ORDERS MANAGEMENT SECTION -->
@@ -493,7 +894,7 @@
             type="text"
             placeholder="Search product name..."
             class="w-full border p-3 rounded-xl"
-            autocomplete="off"
+           autocomplete="off" name="search"
           />
           <div
             id="productListSearchSuggestions"
@@ -539,7 +940,7 @@
       <form id="businessForm" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">Shop Name</label>
-          <input name="shopName" type="text" placeholder="Your shop name (e.g., ShopBoss)" required class="w-full border p-3 rounded-xl" />
+          <input name="shopName" type="text" placeholder="Your shop name (e.g., Sucess Technology)" required class="w-full border p-3 rounded-xl" />
         </div>
         <input name="email" type="email" placeholder="Email" required class="w-full border p-3 rounded-xl" />
         <input name="phone" type="tel" placeholder="Phone (for WhatsApp)" required class="w-full border p-3 rounded-xl" />
@@ -595,7 +996,7 @@
               <span class="text-3xl">🏢</span>
               <div>
                 <h5 class="font-bold text-sm text-slate-600 uppercase">Business Name</h5>
-                <p id="previewShopName" class="text-lg font-bold">ShopBoss</p>
+                <p id="previewShopName" class="text-lg font-bold">Sucess Technology</p>
               </div>
             </div>
             
@@ -619,7 +1020,7 @@
               <span class="text-3xl">📧</span>
               <div>
                 <h5 class="font-bold text-sm text-slate-600 uppercase">Email</h5>
-                <p id="previewEmail" class="text-sm font-mono">hello@shopboss.com</p>
+                <p id="previewEmail" class="text-sm font-mono">hello@Sucess Technology.com</p>
               </div>
             </div>
           </div>
@@ -702,7 +1103,7 @@
                   <div class="p-6 bg-gray-50 rounded-2xl border-l-4 border-primary">
                     <h3 class="font-bold text-lg mb-2">📱 Get in Touch</h3>
                     <p id="previewPhoneMain" class="text-gray-700 font-mono mb-2">+1 800 555 1234</p>
-                    <p id="previewEmailMain" class="text-gray-700 font-mono">hello@shopboss.com</p>
+                    <p id="previewEmailMain" class="text-gray-700 font-mono">hello@Sucess Technology.com</p>
                   </div>
 
                   <div class="p-6 bg-gray-50 rounded-2xl border-l-4 border-primary">
@@ -893,7 +1294,7 @@ Sun: Closed</p>
 <div id="toastMsg" class="toast-msg"></div>
 <script src="supabase-config.js"></script>
 <script src="supabase-api.js"></script>
-<script src="viewer/prodct.js"></script>
+<script src="admin/authu.js"></script>
 <script src="admin/admin.js"></script>
 </body>
 </html>

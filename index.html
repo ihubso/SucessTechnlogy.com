@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>ShopBoss · Full Featured Store</title>
+  <title>Sucess Technology · Full Featured Store</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -24,6 +24,31 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-content">
+    <div class="loading-logo">ST</div>
+    <h2 class="loading-title">Welcome to <span style="color:#e60012;">Sucess Technology</span></h2>
+    <p class="loading-subtitle">Preparing your shopping experience<span class="dots"></span></p>
+    
+    <div class="progress-percentage">
+      <span id="progressPercent">0%</span>
+    </div>
+    <div class="progress-container">
+      <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+    </div>
+    
+    <div class="progress-steps">
+      <div class="progress-step" id="step1">Initializing</div>
+      <div class="progress-step" id="step2">Loading Products</div>
+      <div class="progress-step" id="step3">Loading Reviews</div>
+      <div class="progress-step" id="step4">Setting Up UI</div>
+      <div class="progress-step" id="step5">Ready!</div>
+    </div>
+    
+    <p class="loading-text" id="loadingStatus">Connecting to store<span class="dots"></span></p>
+  </div>
+</div>
   <!-- Mobile Navigation Drawer -->
 <div class="mobile-nav-overlay" id="mobileNavOverlay"></div>
 <div class="mobile-nav-drawer" id="mobileNavDrawer">
@@ -99,7 +124,7 @@
 
   <div class="header-right">
     <div class="search-wrapper">
-      <input id="searchInput" type="text" placeholder="Search..." autocomplete="off" />
+      <input id="searchInput" type="search" placeholder="Search products..." autocomplete="off" name="search" />
       <div id="searchDropdown" class="search-dropdown"></div>
     </div>
       <div class="relative">

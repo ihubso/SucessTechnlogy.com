@@ -1,16 +1,16 @@
-// ===============================================
-//        ACTION PROGRESS BAR (Top Bar)
-// ===============================================
-const ActionProgressBar = {
+
+console.log('✅ authu.js loaded successfully!');    
+const AdminProgressBar = {
   bar: null,
-  fill: null,
   timeout: null,
   
+  // Initialize the progress bar element
   init() {
-    if (!document.getElementById('actionProgressBar')) {
+    // Create progress bar if it doesn't exist
+    if (!document.getElementById('adminActionProgress')) {
       const bar = document.createElement('div');
-      bar.id = 'actionProgressBar';
-      bar.innerHTML = '<div id="actionProgressFill"></div>';
+      bar.id = 'adminActionProgress';
+      bar.innerHTML = '<div id="adminActionProgressFill"></div>';
       bar.style.cssText = `
         position: fixed;
         top: 0;
@@ -23,24 +23,25 @@ const ActionProgressBar = {
         transition: opacity 0.2s ease;
       `;
       
-      this.fill = bar.querySelector('#actionProgressFill');
-      this.fill.style.cssText = `
+      const fill = bar.querySelector('#adminActionProgressFill');
+      fill.style.cssText = `
         height: 100%;
         width: 0%;
         background: linear-gradient(90deg, #e60012, #ff6b6b, #e60012);
         background-size: 200% 100%;
-        animation: progressShimmer 1.5s linear infinite;
+        animation: adminProgressShimmer 1.5s linear infinite;
         transition: width 0.3s ease;
         border-radius: 0 2px 2px 0;
       `;
       
       document.body.appendChild(bar);
       
-      if (!document.getElementById('progressShimmerStyle')) {
+      // Add shimmer animation style
+      if (!document.getElementById('adminProgressStyle')) {
         const style = document.createElement('style');
-        style.id = 'progressShimmerStyle';
+        style.id = 'adminProgressStyle';
         style.textContent = `
-          @keyframes progressShimmer {
+          @keyframes adminProgressShimmer {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
@@ -50,48 +51,62 @@ const ActionProgressBar = {
       }
     }
     
-    this.bar = document.getElementById('actionProgressBar');
-    this.fill = document.getElementById('actionProgressFill');
+    this.bar = document.getElementById('adminActionProgress');
+    this.fill = document.getElementById('adminActionProgressFill');
   },
   
-  start() {
+  // Start showing progress
+  start(message = '') {
     if (!this.bar) this.init();
+    
+    // Clear any existing timeout
     if (this.timeout) clearTimeout(this.timeout);
     
+    // Show bar
     this.bar.style.opacity = '1';
     this.fill.style.width = '0%';
     
+    // Animate to 30% quickly
     setTimeout(() => {
       this.fill.style.width = '30%';
     }, 50);
     
+    // Animate to 70% slowly
     this.timeout = setTimeout(() => {
       this.fill.style.width = '70%';
     }, 500);
   },
   
+  // Complete the progress
   complete() {
     if (!this.bar) return;
+    
     if (this.timeout) clearTimeout(this.timeout);
     
+    // Fill to 100%
     this.fill.style.width = '100%';
     
+    // Hide after short delay
     this.timeout = setTimeout(() => {
       this.fill.style.width = '0%';
       this.bar.style.opacity = '0';
     }, 400);
   },
   
+  // Show error state
   error() {
     if (!this.bar) return;
+    
     if (this.timeout) clearTimeout(this.timeout);
     
+    // Flash red
     this.fill.style.width = '100%';
     this.fill.style.background = '#ef4444';
     
     this.timeout = setTimeout(() => {
       this.fill.style.width = '0%';
       this.bar.style.opacity = '0';
+      // Reset color
       setTimeout(() => {
         this.fill.style.background = 'linear-gradient(90deg, #e60012, #ff6b6b, #e60012)';
         this.fill.style.backgroundSize = '200% 100%';
@@ -100,7 +115,7 @@ const ActionProgressBar = {
   }
 };
 
-// Initialize progress bar
+// Initialize progress bar immediately
 document.addEventListener('DOMContentLoaded', () => {
-  ActionProgressBar.init();
+  AdminProgressBar.init();
 });

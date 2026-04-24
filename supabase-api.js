@@ -1,4 +1,4 @@
-// supabase-api.js - ShopBoss Database Operations
+// supabase-api.js - Sucess Technology Database Operations
 // Uses getSupabase() from supabase-config.js
 
 // supabase-api.js - With better error handling and column name mapping
@@ -110,27 +110,44 @@ async function addProductToDB(product) {
 
 async function createOrderInDB(order) {
   const client = getSupabase();
-  if (!client) return null;
+  if (!client) {
+    console.warn('⚠️ Supabase not available, order saved locally only');
+    return null;
+  }
   
   try {
+    // Ensure items is a proper JSON array
+    const safeItems = Array.isArray(order.items) ? order.items : [];
+    
+    console.log('📤 Creating order in Supabase:', {
+      id: order.id,
+      customer_name: order.customer,
+      phone: order.phone,
+      total: order.total,
+      items_count: safeItems.length
+    });
+    
     const { data, error } = await client
       .from('orders')
       .insert([{
         id: order.id,
         customer_name: order.customer,
         phone: order.phone,
-        address: order.address,
+        address: order.address || '',
         email: order.email || '',
-        items: order.items,
-        total: order.total,
+        items: safeItems,
+        total: Number(order.total) || 0,
         status: 'pending'
       }])
       .select();
     
     if (error) {
       console.error('❌ Error creating order:', error.message);
+      console.error('Full error:', error);
       return null;
     }
+    
+    console.log('✅ Order saved to Supabase!', order.id);
     return data ? data[0] : null;
   } catch (err) {
     console.error('❌ Error:', err.message);
@@ -404,7 +421,7 @@ async function fetchBusinessInfoFromDB() {
     if (data) {
       // Map snake_case DB columns to camelCase for app
       return {
-        shopName: data.shop_name || 'ShopBoss',
+        shopName: data.shop_name || 'Sucess Technology',
         email: data.email || '',
         phone: data.phone || '',
         address: data.address || '',
@@ -517,7 +534,10 @@ async function fetchFeaturedIdsFromDB() {
       console.error('❌ Error fetching featured:', error.message);
       return [];
     }
-    return (data || []).map(row => row.product_id);
+    
+    const ids = (data || []).map(row => row.product_id);
+    console.log('✅ Fetched featured products from Supabase:', ids.length);
+    return ids;
   } catch (err) {
     console.error('❌ Error:', err.message);
     return [];
@@ -529,12 +549,16 @@ async function saveFeaturedIdsToDB(ids) {
   if (!client) return;
   
   try {
+    // Delete all existing featured products
     await client.from('featured_products').delete().neq('product_id', '');
+    
     if (ids.length > 0) {
       const rows = ids.map(id => ({ product_id: id }));
       const { error } = await client.from('featured_products').insert(rows);
       if (error) {
         console.error('❌ Error saving featured:', error.message);
+      } else {
+        console.log('✅ Featured products saved to Supabase:', ids.length);
       }
     }
   } catch (err) {
@@ -638,22 +662,28 @@ async function saveViewAnalyticsToDB(analytics) {
   if (!client) return;
   
   try {
-    const rows = Object.entries(analytics).map(([product_id, data]) => ({
-      product_id,
-      count: data.count,
-      first_viewed: data.firstViewed,
-      last_viewed: data.lastViewed
-    }));
+    const entries = Object.entries(analytics);
     
-    await client.from('view_analytics').delete().neq('product_id', '');
-    if (rows.length > 0) {
-      const { error } = await client.from('view_analytics').insert(rows);
+    for (const [product_id, data] of entries) {
+      const { error } = await client
+        .from('view_analytics')
+        .upsert({
+          product_id: product_id,
+          count: data.count,
+          first_viewed: data.firstViewed,
+          last_viewed: data.lastViewed
+        }, {
+          onConflict: 'product_id'
+        });
+      
       if (error) {
-        console.error('❌ Error saving view analytics:', error.message);
+        // Silently ignore - product might not exist in database
+        // but we still want to track views locally
+        console.warn('⚠️ Could not save view analytics:', error.message);
       }
     }
   } catch (err) {
-    console.error('❌ Error:', err.message);
+    console.warn('⚠️ View analytics sync skipped:', err.message);
   }
 }
 
@@ -687,20 +717,21 @@ async function saveFailedSearchesToDB(failed) {
   if (!client) return;
   
   try {
-    // Delete all existing failed searches
-    await client.from('failed_searches').delete().neq('query', '');
-    
     if (failed.length > 0) {
-      // Map camelCase to snake_case for database
-      const rows = failed.map(item => ({
-        query: item.query,
-        count: item.count,
-        last_searched: item.lastSearched  // Map camelCase to snake_case
-      }));
-      
-      const { error } = await client.from('failed_searches').insert(rows);
-      if (error) {
-        console.error('❌ Error saving failed searches:', error.message);
+      for (const item of failed) {
+        const { error } = await client
+          .from('failed_searches')
+          .upsert({
+            query: item.query,
+            count: item.count,
+            last_searched: item.lastSearched
+          }, {
+            onConflict: 'query'
+          });
+        
+        if (error) {
+          console.error('❌ Error saving failed search:', error.message);
+        }
       }
     }
   } catch (err) {

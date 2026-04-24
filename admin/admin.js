@@ -1,4 +1,4 @@
-// admin.js - ShopBoss Admin Panel (Supabase Integration)
+// admin.js - Sucess Technology Admin Panel (Supabase Integration)
 
 const STORAGE = {
   PRODUCTS: 'shop_products_v3',
@@ -69,11 +69,24 @@ async function getProducts() {
 
 async function saveProducts(prods) {
   GLOBAL_PRODUCTS = prods;
-  localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+  localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods)); // cache only
   
-  // Sync to Supabase
-  for (const product of prods) {
-    await addProductToDB(product);
+  try {
+    const client = getSupabase();
+    if (client) {
+      // Only upsert/update - NEVER delete automatically
+      for (const p of prods) {
+        const { error } = await client
+          .from('products')
+          .upsert([p], { onConflict: 'id' });
+        
+        if (error) {
+          console.warn('⚠️ Could not update product:', p.id, error.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Supabase save failed:', e);
   }
 }
 
@@ -167,8 +180,8 @@ async function getBusinessInfo() {
     return cloudInfo;
   }
   return JSON.parse(localStorage.getItem(STORAGE.BUSINESS) || JSON.stringify({
-    shopName: "ShopBoss",
-    email: "hello@shopboss.com",
+    shopName: "Sucess Technology",
+    email: "hello@Sucess Technology.com",
     phone: "+1234567890",
     address: "123 Commerce St",
     facebook: "",
@@ -191,7 +204,10 @@ async function getFeaturedIds() {
 }
 
 async function setFeaturedIds(ids) {
+  // Update localStorage as cache only
   localStorage.setItem(STORAGE.FEATURED, JSON.stringify(ids));
+  
+  // Save to Supabase
   await saveFeaturedIdsToDB(ids);
 }
 
@@ -357,13 +373,18 @@ async function renderReviewsList() {
 async function deleteReview(productId, reviewId) {
   if (!confirm('Delete this review?')) return;
   
+  AdminProgressBar.start();
   const reviews = await getReviews();
   if (reviews[productId]) {
     reviews[productId] = reviews[productId].filter(r => r.id !== reviewId);
     await saveReviews(reviews);
+    AdminProgressBar.complete();
     showToast('Review deleted');
     renderReviewsList();
+  } else {
+    AdminProgressBar.error();
   }
+
 }
 
 function populateReviewFilters() {
@@ -1219,23 +1240,28 @@ function timeAgo(dateString) {
 
 async function clearSearchAnalytics() {
   if (!confirm('Clear all search data?')) return;
+  AdminProgressBar.start();
   await saveSearchAnalytics({});
   await saveFailedSearches([]);
+  AdminProgressBar.complete();
   showToast('Search analytics cleared');
   renderAnalyticsDashboard();
 }
 
 async function clearViewAnalytics() {
   if (!confirm('Clear all view data?')) return;
+  AdminProgressBar.start();
   await saveViewAnalytics({});
+  AdminProgressBar.complete();
   showToast('View analytics cleared');
   renderAnalyticsDashboard();
 }
 
+
 // Quick add product from failed search
 window.addQuickProduct = async function(productName) {
   if (!confirm(`Create a product named "${productName}"?`)) return;
-  
+    AdminProgressBar.start();
   const newProduct = {
     id: genId(),
     name: productName,
@@ -1258,6 +1284,7 @@ window.addQuickProduct = async function(productName) {
   const products = await getProducts();
   products.unshift(newProduct);
   await saveProducts(products);
+    AdminProgressBar.complete();
   showToast('Product added');
   refreshAll();
 };
@@ -1457,21 +1484,49 @@ async function renderProductListAdmin() {
     img.addEventListener('click', () => openEditProduct(img.dataset.id))
   );
 
-  document.querySelectorAll('.delete-product-btn').forEach(btn =>
-    btn.addEventListener('click', async () => {
-      if (confirm('Delete?')) {
-        let prods = (await getProducts()).filter(p => p.id !== btn.dataset.id);
-        let featured = await getFeaturedIds();
-        if (featured.includes(btn.dataset.id)) {
-          await setFeaturedIds(featured.filter(id => id !== btn.dataset.id));
+document.querySelectorAll('.delete-product-btn').forEach(btn =>
+  btn.addEventListener('click', async () => {
+    if (confirm('Delete this product? This cannot be undone.')) {
+      const productId = btn.dataset.id;
+      
+           AdminProgressBar.start();
+
+      try {
+        const client = getSupabase();
+        if (client) {
+          const { error } = await client
+            .from('products')
+            .delete()
+            .eq('id', productId);
+          
+          if (error) {
+            console.error('❌ Error deleting from Supabase:', error.message);
+              AdminProgressBar.error();
+          } else {
+            console.log('✅ Product deleted from Supabase:', productId);
+            
+          }
         }
-        await removeDealForProduct(btn.dataset.id, true);
-        await saveProducts(prods);
-        showToast('Deleted');
-        refreshAll();
+      } catch (err) {
+        console.warn('⚠️ Could not delete from Supabase:', err);
+         AdminProgressBar.error();
       }
-    })
-  );
+      
+      // Remove from local
+      let prods = (await getProducts()).filter(p => p.id !== productId);
+      let featured = await getFeaturedIds();
+      if (featured.includes(productId)) {
+        await setFeaturedIds(featured.filter(id => id !== productId));
+      }
+      await removeDealForProduct(productId, true);
+      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+      GLOBAL_PRODUCTS = prods;
+         AdminProgressBar.complete();
+      showToast('Deleted');
+      refreshAll();
+    }
+  })
+);
 
   document.querySelectorAll('.set-deal-btn').forEach(btn =>
     btn.addEventListener('click', async () => {
@@ -1568,10 +1623,83 @@ if (p.image) {
   window.editingId = id;
   openModal('editModal');
 }
+// Live Preview Updater for Add Product Form
+function initAddProductLivePreview() {
+  const form = document.getElementById('adminForm');
+  if (!form) return;
+
+  const previewName = document.getElementById('previewName');
+  const previewPrice = document.getElementById('previewPrice');
+  const previewStock = document.getElementById('previewStock');
+  const previewMainImage = document.getElementById('previewMainImage');
+  const previewPlaceholder = document.getElementById('previewPlaceholder');
+  const previewHotBadge = document.getElementById('previewHotBadge');
+  const previewNewBadge = document.getElementById('previewNewBadge');
+  const mainImagePreviewImg = document.getElementById('mainImagePreviewImg');
+  const mainImagePlaceholder = document.getElementById('mainImagePlaceholder');
+
+  // Update preview when form fields change
+  form.addEventListener('input', (e) => {
+    const field = e.target;
+    
+    switch (field.name) {
+      case 'name':
+        if (previewName) previewName.textContent = field.value || 'Product Name';
+        break;
+      case 'price':
+        if (previewPrice) previewPrice.textContent = `FCFA ${parseFloat(field.value || 0).toFixed(2)}`;
+        break;
+      case 'stock':
+        if (previewStock) previewStock.textContent = `Stock: ${field.value || 0}`;
+        break;
+      case 'isHot':
+        if (previewHotBadge) previewHotBadge.classList.toggle('hidden', !field.checked);
+        break;
+      case 'isNew':
+        if (previewNewBadge) previewNewBadge.classList.toggle('hidden', !field.checked);
+        break;
+    }
+  });
+
+  // Update main image preview when image is uploaded
+  const imageUpload = document.getElementById('imageUpload');
+  if (imageUpload) {
+    imageUpload.addEventListener('change', () => {
+      // The existing handler updates mainImagePreviewImg
+      // We sync the live preview after a short delay
+      setTimeout(() => {
+        if (mainImagePreviewImg && !mainImagePreviewImg.classList.contains('hidden')) {
+          if (previewMainImage) {
+            previewMainImage.src = mainImagePreviewImg.src;
+            previewMainImage.classList.remove('hidden');
+          }
+          if (previewPlaceholder) previewPlaceholder.classList.add('hidden');
+          if (mainImagePlaceholder) mainImagePlaceholder.classList.add('hidden');
+        }
+      }, 100);
+    });
+  }
+
+  // Update preview when image URL is pasted
+  const imageUrlInput = form.querySelector('input[name="imageUrl"]');
+  if (imageUrlInput) {
+    imageUrlInput.addEventListener('input', () => {
+      if (imageUrlInput.value) {
+        if (previewMainImage) {
+          previewMainImage.src = imageUrlInput.value;
+          previewMainImage.classList.remove('hidden');
+        }
+        if (previewPlaceholder) previewPlaceholder.classList.add('hidden');
+      }
+    });
+  }
+}
+
 
 document.getElementById('editForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!window.editingId) return;
+    AdminProgressBar.start();
 
   let fd = new FormData(e.target);
   
@@ -1626,12 +1754,14 @@ const mainImage = document.getElementById('editMainImageField')?.value ||
       
       if (error) {
         console.error('❌ Error updating in Supabase:', error.message);
+           AdminProgressBar.error();
       } else {
         console.log('✅ Product updated in Supabase!');
       }
     }
   } catch (err) {
     console.warn('⚠️ Could not update Supabase:', err.message);
+     AdminProgressBar.error();
   }
 
   // Always update localStorage
@@ -1640,21 +1770,39 @@ const mainImage = document.getElementById('editMainImageField')?.value ||
   if (idx !== -1) prods[idx] = updated;
   localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
   GLOBAL_PRODUCTS = prods;
-  
+   AdminProgressBar.complete();
   closeModal('editModal');
   showToast('Product updated');
   refreshAll();
 });
 
+// Add Product Form Submit with Loading States
 document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  
+  const submitBtn = document.getElementById('addProductSubmitBtn');
+  const btnText = document.getElementById('btnText');
+  const btnLoading = document.getElementById('btnLoading');
+  const btnSuccess = document.getElementById('btnSuccess');
+  const statusBadge = document.getElementById('addProductStatus');
+  const successMsg = document.getElementById('addProductSuccess');
+  const successProductName = document.getElementById('successProductName');
+  
+  // Show loading state
+  btnText.classList.add('hidden');
+  btnLoading.classList.remove('hidden');
+  btnSuccess.classList.add('hidden');
+  submitBtn.disabled = true;
+  statusBadge.textContent = 'Saving...';
+  statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-600 animate-pulse';
+  
   let fd = new FormData(e.target);
   
- // Get image from hidden field (upload) or URL input
-const mainImage = document.getElementById('mainImageField')?.value || 
-                  fd.get('imageUrl') || 
-                  fd.get('image') || 
-                  'https://placehold.co/600x400';
+  // Get image from hidden field (upload) or URL input
+  const mainImage = document.getElementById('mainImageField')?.value || 
+                    fd.get('imageUrl') || 
+                    fd.get('image') || 
+                    'https://placehold.co/600x400';
   
   let allImages = [...addedImages];
   if (allImages.length === 0) {
@@ -1673,7 +1821,7 @@ const mainImage = document.getElementById('mainImageField')?.value ||
     category: fd.get('category'),
     description: fd.get('description') || '',
     stock: Number(fd.get('stock')),
-    image: processedImages[0],
+    image: processedImages[0] || 'https://placehold.co/600x400',
     images: processedImages,
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
@@ -1687,13 +1835,13 @@ const mainImage = document.getElementById('mainImageField')?.value ||
 
   // Try Supabase first
   let savedToCloud = false;
-  console.log('📤 Sending product to Supabase...');
-  const result = await addProductToDB(newProd);
-  if (result) {
-    savedToCloud = true;
-    console.log('✅ Product saved to Supabase successfully!');
-  } else {
-    console.warn('⚠️ Failed to save to Supabase, saving locally only');
+  try {
+    const result = await addProductToDB(newProd);
+    if (result) {
+      savedToCloud = true;
+    }
+  } catch (err) {
+    console.warn('Supabase save failed:', err);
   }
 
   // Always save to localStorage as backup
@@ -1702,17 +1850,77 @@ const mainImage = document.getElementById('mainImageField')?.value ||
   localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
   GLOBAL_PRODUCTS = prods;
 
-  // Reset form
-  e.target.reset();
-  addedImages = [];
-  variantsList = [];
-  updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
-  renderVariantsUI('variantsContainer', variantsList);
+  // Show success state
+  btnLoading.classList.add('hidden');
+  btnSuccess.classList.remove('hidden');
+  statusBadge.textContent = '✅ Added';
+  statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-green-100 text-green-600';
   
+  // Show success message
+  successProductName.textContent = `"${newProd.name}" has been added to your store.`;
+  successMsg.classList.remove('hidden');
+  successMsg.style.animation = 'slideDown 0.5s ease';
+
   showToast(savedToCloud ? '✅ Product added to cloud!' : '⚠️ Product saved locally');
+
+  // Reset everything after delay
+  setTimeout(() => {
+    // Reset form
+    e.target.reset();
+    addedImages = [];
+    variantsList = [];
+    
+    // Reset image previews
+    updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
+    renderVariantsUI('variantsContainer', variantsList);
+    
+    // Reset main image
+    const mainPreviewImg = document.getElementById('mainImagePreviewImg');
+    const mainPlaceholder = document.getElementById('mainImagePlaceholder');
+    if (mainPreviewImg) mainPreviewImg.classList.add('hidden');
+    if (mainPlaceholder) mainPlaceholder.classList.remove('hidden');
+    document.getElementById('mainImageField').value = '';
+    
+    // Reset preview
+    document.getElementById('previewName').textContent = 'Product Name';
+    document.getElementById('previewPrice').textContent = 'FCFA 0.00';
+    document.getElementById('previewStock').textContent = 'Stock: 0';
+    document.getElementById('previewMainImage').classList.add('hidden');
+    document.getElementById('previewPlaceholder').classList.remove('hidden');
+    document.getElementById('previewHotBadge').classList.add('hidden');
+    document.getElementById('previewNewBadge').classList.add('hidden');
+    
+    // Reset button
+    btnSuccess.classList.add('hidden');
+    btnText.classList.remove('hidden');
+    btnLoading.classList.add('hidden');
+    submitBtn.disabled = false;
+    statusBadge.textContent = 'Ready';
+    statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-500';
+    
+    // Hide success message
+    successMsg.style.animation = 'slideUp 0.3s ease forwards';
+    setTimeout(() => {
+      successMsg.classList.add('hidden');
+      successMsg.style.animation = '';
+    }, 300);
+    
+  }, 2500);
+
   refreshAll();
 });
 
+// Hide success message manually
+window.hideAddSuccess = function() {
+  const successMsg = document.getElementById('addProductSuccess');
+  if (successMsg) {
+    successMsg.style.animation = 'slideUp 0.3s ease forwards';
+    setTimeout(() => {
+      successMsg.classList.add('hidden');
+      successMsg.style.animation = '';
+    }, 300);
+  }
+};
 async function loadAdminFromSupabase() {
   try {
     const client = getSupabase();
@@ -1842,6 +2050,7 @@ document.getElementById('addFeaturedBtn')?.addEventListener('click', () => {
 
 document.getElementById('businessForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+   AdminProgressBar.start();
   let info = {
     shopName: e.target.shopName.value,
     email: e.target.email.value,
@@ -1852,12 +2061,14 @@ document.getElementById('businessForm').addEventListener('submit', async (e) => 
     tiktok: e.target.tiktok.value
   };
   await saveBusinessInfo(info);
+   AdminProgressBar.complete();
   showToast('Business info saved');
   refreshAll();
 });
 
 document.getElementById('resetDefaultBtn')?.addEventListener('click', async () => {
   if (confirm('Reset to default products?')) {
+    AdminProgressBar.start();
     localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
     GLOBAL_PRODUCTS = DEFAULT_PRODUCTS;
     await setDealsOfToday([]);
@@ -1866,6 +2077,7 @@ document.getElementById('resetDefaultBtn')?.addEventListener('click', async () =
       DEFAULT_PRODUCTS.some(p => p.id === id)
     );
     await setFeaturedIds(validFeatured);
+    AdminProgressBar.complete();
     refreshAll();
     showToast('Reset done');
   }
@@ -1886,14 +2098,14 @@ async function loadBusinessForm() {
   
   const adminHeader = document.getElementById('adminHeaderShopName');
   if (adminHeader) {
-    if (info.shopName && info.shopName.toLowerCase() !== 'shopboss') {
+    if (info.shopName && info.shopName.toLowerCase() !== 'Sucess Technology') {
       adminHeader.innerHTML = `${info.shopName}<span class="text-xs text-slate-400 ml-1">admin</span>`;
     }
   }
   
   const mainHeader = document.getElementById('mainHeaderShopName');
   if (mainHeader) {
-    if (info.shopName && info.shopName.toLowerCase() !== 'shopboss') {
+    if (info.shopName && info.shopName.toLowerCase() !== 'Sucess Technology') {
       mainHeader.textContent = info.shopName;
     } else {
       mainHeader.innerHTML = `shop<span class="text-primary">Boss</span>`;
@@ -1927,7 +2139,7 @@ async function updateContactPreview() {
   let business = await getBusinessInfo();
   let contact = await getContactInfo();
   
-  document.getElementById('previewShopName').textContent = business.shopName || 'ShopBoss';
+  document.getElementById('previewShopName').textContent = business.shopName || 'Sucess Technology';
   document.getElementById('previewAddress').textContent = business.address;
   document.getElementById('previewPhone').textContent = business.phone;
   document.getElementById('previewEmail').textContent = business.email;
@@ -1957,6 +2169,7 @@ async function updateContactPreview() {
 
 document.getElementById('contactForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  AdminProgressBar.start();
   let info = {
     latitude: parseFloat(e.target.latitude.value) || 40.7128,
     longitude: parseFloat(e.target.longitude.value) || -74.0060,
@@ -1965,9 +2178,11 @@ document.getElementById('contactForm')?.addEventListener('submit', async (e) => 
     shopPhoto: document.getElementById('shopPhotoDataField')?.value || e.target.shopPhoto?.value || ''
   };
   await saveContactInfo(info);
+  AdminProgressBar.complete();
   updateContactPreview();
   showToast('Location settings saved');
 });
+
 
 async function buildCategoryFilters() {
   let products = await getProducts();
@@ -2308,12 +2523,13 @@ async function updateOrderStatus(orderId, newStatus) {
   };
   
   if (confirm(`Change order #${orderId} status to "${statusLabels[newStatus]}"?`)) {
+     AdminProgressBar.start();
     orders[orderIndex].status = newStatus;
     localStorage.setItem(STORAGE.ORDERS, JSON.stringify(orders));
     
     // Update in Supabase
     await updateOrderStatusInDB(orderId, newStatus);
-    
+    AdminProgressBar.complete();
     showToast(`Order #${orderId} marked as ${statusLabels[newStatus]}`);
     renderOrderList();
     renderAnalytics();
@@ -2508,11 +2724,12 @@ function updateCustomerStats(customers, orders) {
 
 async function deleteCustomer(customerId, customerName) {
   if (!confirm(`Delete customer "${customerName}"? This cannot be undone.`)) return;
-  
+  AdminProgressBar.start();
+
   const accounts = await getCustomers();
   const updatedAccounts = accounts.filter(a => a.id !== customerId);
   await saveCustomers(updatedAccounts);
-  
+  AdminProgressBar.complete();
   showToast(`Customer "${customerName}" deleted`);
   renderCustomerList();
 }
@@ -2542,9 +2759,11 @@ async function saveDealForProduct(productId, discount) {
     showToast("Discount must be between 1 and 95");
     return;
   }
+  AdminProgressBar.start();
   const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
   deals.push({ id: productId, discount: cleanDiscount });
   await setDealsOfToday(deals);
+  AdminProgressBar.complete();
   showToast("Deal of the day saved");
   refreshAll();
 }
@@ -2552,13 +2771,16 @@ async function saveDealForProduct(productId, discount) {
 async function removeDealForProduct(productId, silent = false) {
   const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
   await setDealsOfToday(deals);
+  AdminProgressBar.start();
   if (!silent) {
     showToast("Deal removed");
     refreshAll();
   }
+  AdminProgressBar.complete();
 }
 
 async function toggleFeatured(id) {
+    AdminProgressBar.start();
   let ids = await getFeaturedIds();
   if (ids.includes(id)) {
     ids = ids.filter(i => i !== id);
@@ -2568,6 +2790,7 @@ async function toggleFeatured(id) {
     showToast("Added to Featured");
   }
   await setFeaturedIds(ids);
+    AdminProgressBar.complete();
   refreshAll();
 }
 
@@ -2575,78 +2798,383 @@ async function toggleFeatured(id) {
 //                    INIT
 // ===============================================
 
+// ===============================================
+//                    INIT (UPDATED)
+// ===============================================
+
 async function init() {
-  GLOBAL_PRODUCTS = await getProducts();
+  // Initialize loading manager
+  AdminLoadingManager.init();
+  AdminLoadingManager.updateProgress(1, 'Connecting to database...');
   
-  if (!localStorage.getItem(STORAGE.PRODUCTS)) {
-    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
-    GLOBAL_PRODUCTS = DEFAULT_PRODUCTS;
-  }
-  
-  const existingFeatured = await getFeaturedIds();
-  if (!existingFeatured.length && GLOBAL_PRODUCTS.length) {
-    await setFeaturedIds([GLOBAL_PRODUCTS[0].id]);
-  }
-
-  const cloudProducts = await loadAdminFromSupabase();
-  if (cloudProducts) {
-    console.log('📦 Loaded from cloud');
-    GLOBAL_PRODUCTS = cloudProducts;
-  } else {
-    console.log('📦 Using local storage');
-  }
-  
-  refreshAll();
-
-  loadBusinessForm();
-
-  document.getElementById('searchInput').addEventListener('input', async (e) => {
-    currentSearch = e.target.value;
-    currentPage = 1;
+  try {
+    // Step 1: Load products
+    GLOBAL_PRODUCTS = await getProducts();
+    AdminLoadingManager.updateProgress(1, 'Loading products...');
     
-    const query = e.target.value.trim();
-    if (query) {
-      await trackProductSearch(query);
-      const products = await getProducts();
-      const results = products.filter(p => 
-        p.name.toLowerCase().includes(query.toLowerCase())
-      ).length;
-      await trackSearchResults(query, results);
+    if (!localStorage.getItem(STORAGE.PRODUCTS)) {
+      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
+      GLOBAL_PRODUCTS = DEFAULT_PRODUCTS;
     }
     
-    renderAllProducts();
-  });
+    // Step 2: Setup featured
+    const existingFeatured = await getFeaturedIds();
+    if (!existingFeatured.length && GLOBAL_PRODUCTS.length) {
+      await setFeaturedIds([GLOBAL_PRODUCTS[0].id]);
+    }
+    AdminLoadingManager.updateProgress(1, 'Setting up featured products...');
 
-  document.getElementById('sortSelect').addEventListener('change', (e) => {
-    currentSort = e.target.value;
-    currentPage = 1;
-    renderAllProducts();
-  });
+    // Step 3: Sync with cloud
+    const cloudProducts = await loadAdminFromSupabase();
+    if (cloudProducts) {
+      console.log('📦 Loaded from cloud');
+      GLOBAL_PRODUCTS = cloudProducts;
+    } else {
+      console.log('📦 Using local storage');
+    }
+    AdminLoadingManager.updateProgress(1, 'Syncing cloud data...');
+    
+    // Step 4: Refresh all displays
+    await refreshAll();
+    AdminLoadingManager.updateProgress(2, 'Rendering dashboard...');
 
-  document.getElementById('productListSearchBtn')?.addEventListener('click', () => {
-    adminProductSearch = document.getElementById('productListSearchInput')?.value || '';
-    document.getElementById('productListSearchSuggestions')?.classList.add('hidden');
-    renderProductListAdmin();
-  });
+    // Step 5: Load business info
+    loadBusinessForm();
+    AdminLoadingManager.updateProgress(1, 'Loading business info...');
 
-  document.getElementById('productListSearchInput')?.addEventListener('input', (e) => {
-    adminProductSearch = e.target.value || '';
-    renderAdminSearchSuggestions(e.target.value || '');
-    renderProductListAdmin();
-  });
+    // Step 6: Setup all event listeners
+    setupAdminEventListeners();
+    AdminLoadingManager.updateProgress(1, 'Setting up navigation...');
 
-  document.getElementById('productListSearchInput')?.addEventListener('focus', (e) => {
-    renderAdminSearchSuggestions(e.target.value || '');
-  });
+    // Step 7: Initialize additional features
+    loadContactForm();
+    initAddVariants();
+    initEditVariants();
+    initAddProductLivePreview();
+    AdminLoadingManager.updateProgress(1, 'Finalizing setup...');
 
-  document.getElementById('productListSearchInput')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+    // Step 8: Set default active section
+    document.getElementById('homeSection').classList.add('active-section');
+    document.querySelector('.nav-btn[data-view="home"]').classList.add('active');
+    
+    // All done - hide loading overlay
+    AdminLoadingManager.hide();
+    
+  } catch (error) {
+    console.error('Admin initialization error:', error);
+    AdminLoadingManager.updateProgress(1, '⚠️ Error loading some components, but panel is ready');
+    setTimeout(() => {
+      AdminLoadingManager.hide();
+    }, 1000);
+  }
+}
+
+// ===============================================
+//        ADMIN LOADING MANAGER
+// ===============================================
+const AdminLoadingManager = {
+  overlay: null,
+  progressBar: null,
+  progressPercent: null,
+  loadingStatus: null,
+  totalSteps: 10,
+  currentStep: 0,
+  steps: [],
+  
+  init() {
+    this.overlay = document.getElementById('adminLoadingOverlay');
+    this.progressBar = document.getElementById('adminProgressBar');
+    this.progressPercent = document.getElementById('adminProgressPercent');
+    this.loadingStatus = document.getElementById('adminLoadingStatus');
+    this.steps = [
+      { id: 'adminStep1', threshold: 0 },
+      { id: 'adminStep2', threshold: 2 },
+      { id: 'adminStep3', threshold: 5 },
+      { id: 'adminStep4', threshold: 7 },
+      { id: 'adminStep5', threshold: 9 }
+    ];
+  },
+  
+  updateProgress(increment = 1, message = '') {
+    this.currentStep = Math.min(this.currentStep + increment, this.totalSteps);
+    const percentage = Math.round((this.currentStep / this.totalSteps) * 100);
+    
+    if (this.progressBar) {
+      this.progressBar.style.width = percentage + '%';
+    }
+    
+    if (this.progressPercent) {
+      this.progressPercent.textContent = percentage + '%';
+    }
+    
+    if (message && this.loadingStatus) {
+      this.loadingStatus.textContent = message;
+    }
+    
+    // Update step indicators
+    this.steps.forEach(step => {
+      const stepEl = document.getElementById(step.id);
+      if (stepEl) {
+        if (this.currentStep >= step.threshold + 1) {
+          stepEl.classList.add('completed');
+          stepEl.classList.remove('current');
+        } else if (this.currentStep >= step.threshold) {
+          stepEl.classList.add('current');
+          stepEl.classList.remove('completed');
+        } else {
+          stepEl.classList.remove('completed', 'current');
+        }
+      }
+    });
+  },
+  
+  hide() {
+    if (this.overlay) {
+      this.updateProgress(1, '🎉 Admin panel ready!');
+      
+      // Add final step animation
+      setTimeout(() => {
+        this.overlay.classList.add('fade-out');
+        
+        // Remove overlay from DOM after animation
+        setTimeout(() => {
+          if (this.overlay && this.overlay.parentNode) {
+            this.overlay.parentNode.removeChild(this.overlay);
+          }
+        }, 500);
+      }, 300);
+    }
+  }
+};
+
+// ===============================================
+//        ADMIN LOGIN SYSTEM
+// ===============================================
+
+// Default admin credentials (change these for production!)
+const ADMIN_CREDENTIALS = {
+  username: 'admin',
+  password: 'admin123'
+};
+
+// Admin session key
+const ADMIN_SESSION_KEY = 'shop_admin_session';
+
+// Check if admin is already logged in
+function isAdminLoggedIn() {
+  const session = localStorage.getItem(ADMIN_SESSION_KEY);
+  if (!session) return false;
+  
+  try {
+    const data = JSON.parse(session);
+    // Check if session is expired (24 hours)
+    if (Date.now() - data.timestamp > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(ADMIN_SESSION_KEY);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Save admin session
+function saveAdminSession(remember = false) {
+  const session = {
+    username: ADMIN_CREDENTIALS.username,
+    timestamp: Date.now(),
+    remember: remember
+  };
+  localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+}
+
+// Clear admin session
+function clearAdminSession() {
+  localStorage.removeItem(ADMIN_SESSION_KEY);
+}
+
+// Add logout button handler
+function addAdminLogoutButton() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+  
+  const logoutBtn = document.createElement('button');
+  logoutBtn.className = 'nav-btn w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:bg-red-50 font-medium mt-4 border-t border-slate-700 pt-4';
+  logoutBtn.innerHTML = '🚪 Logout';
+  logoutBtn.onclick = () => {
+    if (confirm('Are you sure you want to logout from admin panel?')) {
+      clearAdminSession();
+      location.reload();
+    }
+  };
+  sidebar.appendChild(logoutBtn);
+}
+
+// Toggle password visibility
+window.toggleAdminPassword = function() {
+  const passwordInput = document.getElementById('adminPassword');
+  const toggleIcon = document.getElementById('adminPasswordToggleIcon');
+  
+  if (!passwordInput || !toggleIcon) return;
+  
+  if (passwordInput.type === 'password') {
+    passwordInput.type = 'text';
+    toggleIcon.classList.remove('fa-eye');
+    toggleIcon.classList.add('fa-eye-slash');
+  } else {
+    passwordInput.type = 'password';
+    toggleIcon.classList.remove('fa-eye-slash');
+    toggleIcon.classList.add('fa-eye');
+  }
+};
+
+// Handle admin login form
+function initAdminLoginForm() {
+  const loginForm = document.getElementById('adminLoginForm');
+  if (!loginForm) return;
+  
+  loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    adminProductSearch = e.target.value || '';
-    document.getElementById('productListSearchSuggestions')?.classList.add('hidden');
-    renderProductListAdmin();
+    
+    const username = document.getElementById('adminUsername')?.value?.trim();
+    const password = document.getElementById('adminPassword')?.value;
+    const remember = document.getElementById('adminRemember')?.checked || false;
+    const loginBtn = document.getElementById('adminLoginBtn');
+    const loginBtnText = document.getElementById('adminLoginBtnText');
+    const loginBtnLoading = document.getElementById('adminLoginBtnLoading');
+    const errorDiv = document.getElementById('adminLoginError');
+    const errorMsg = document.getElementById('adminLoginErrorMsg');
+    
+    if (!username || !password) return;
+    
+    // Show loading state
+    if (loginBtnText) loginBtnText.classList.add('hidden');
+    if (loginBtnLoading) loginBtnLoading.classList.remove('hidden');
+    if (loginBtn) loginBtn.disabled = true;
+    if (errorDiv) errorDiv.classList.add('hidden');
+    
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Check credentials
+    if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+      // Login successful
+      saveAdminSession(remember);
+      
+      // Hide login overlay
+      const loginOverlay = document.getElementById('adminLoginOverlay');
+      if (loginOverlay) {
+        loginOverlay.style.opacity = '0';
+        loginOverlay.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => {
+          loginOverlay.classList.add('hidden');
+          // Show loading overlay
+          const loadingOverlay = document.getElementById('adminLoadingOverlay');
+          if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
+          }
+          // Start initialization
+          init();
+          // Add logout button
+          addAdminLogoutButton();
+        }, 500);
+      }
+    } else {
+      // Login failed
+      if (errorMsg) errorMsg.textContent = 'Invalid username or password. Please try again.';
+      if (errorDiv) {
+        errorDiv.classList.remove('hidden');
+        errorDiv.style.animation = 'shake 0.5s ease';
+      }
+      
+      if (loginBtnText) loginBtnText.classList.remove('hidden');
+      if (loginBtnLoading) loginBtnLoading.classList.add('hidden');
+      if (loginBtn) loginBtn.disabled = false;
+      
+      // Clear password field
+      const passwordInput = document.getElementById('adminPassword');
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
+      
+      setTimeout(() => {
+        if (errorDiv) errorDiv.style.animation = '';
+      }, 500);
+      
+      console.log('❌ Admin login failed for username:', username);
+    }
   });
+}
 
+// Setup all event listeners (extracted from init function)
+function setupAdminEventListeners() {
+  // Search input
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', async (e) => {
+      currentSearch = e.target.value;
+      currentPage = 1;
+      
+      const query = e.target.value.trim();
+      if (query) {
+        await trackProductSearch(query);
+        const products = await getProducts();
+        const results = products.filter(p => 
+          p.name.toLowerCase().includes(query.toLowerCase())
+        ).length;
+        await trackSearchResults(query, results);
+      }
+      
+      renderAllProducts();
+    });
+  }
+
+  // Sort select
+  const sortSelect = document.getElementById('sortSelect');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', (e) => {
+      currentSort = e.target.value;
+      currentPage = 1;
+      renderAllProducts();
+    });
+  }
+
+  // Product list search button
+  const productListSearchBtn = document.getElementById('productListSearchBtn');
+  if (productListSearchBtn) {
+    productListSearchBtn.addEventListener('click', () => {
+      adminProductSearch = document.getElementById('productListSearchInput')?.value || '';
+      const suggestionsBox = document.getElementById('productListSearchSuggestions');
+      if (suggestionsBox) suggestionsBox.classList.add('hidden');
+      renderProductListAdmin();
+    });
+  }
+
+  // Product list search input
+  const productListSearchInput = document.getElementById('productListSearchInput');
+  if (productListSearchInput) {
+    productListSearchInput.addEventListener('input', (e) => {
+      adminProductSearch = e.target.value || '';
+      renderAdminSearchSuggestions(e.target.value || '');
+      renderProductListAdmin();
+    });
+
+    productListSearchInput.addEventListener('focus', (e) => {
+      renderAdminSearchSuggestions(e.target.value || '');
+    });
+
+    productListSearchInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      adminProductSearch = e.target.value || '';
+      const suggestionsBox = document.getElementById('productListSearchSuggestions');
+      if (suggestionsBox) suggestionsBox.classList.add('hidden');
+      renderProductListAdmin();
+    });
+  }
+
+  // Close suggestions on outside click
   document.addEventListener('click', (e) => {
     const input = document.getElementById('productListSearchInput');
     const box = document.getElementById('productListSearchSuggestions');
@@ -2655,16 +3183,27 @@ async function init() {
     box.classList.add('hidden');
   });
 
+  // Navigation buttons
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       let view = btn.dataset.view;
+      
+      // Hide all sections
       document.querySelectorAll('.admin-panel-section').forEach(sec =>
         sec.classList.remove('active-section')
       );
-      document.getElementById(view + 'Section').classList.add('active-section');
+      
+      // Show selected section
+      const targetSection = document.getElementById(view + 'Section');
+      if (targetSection) {
+        targetSection.classList.add('active-section');
+      }
+      
+      // Update active button
       document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
+      // Load section-specific content
       if (view === 'dashboard') renderAnalytics();
       if (view === 'productList') renderProductListAdmin();
       if (view === 'featuredProduct') populateFeaturedSelect();
@@ -2685,13 +3224,96 @@ async function init() {
       }
     });
   });
-
-  document.getElementById('homeSection').classList.add('active-section');
-  document.querySelector('.nav-btn[data-view="home"]').classList.add('active');
-  loadBusinessForm();
-  loadContactForm();
-  initAddVariants();
-  initEditVariants();
 }
 
-init();
+// Add shake animation style
+function addAdminStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-10px); }
+      40% { transform: translateX(10px); }
+      60% { transform: translateX(-10px); }
+      80% { transform: translateX(10px); }
+    }
+    
+    .admin-login-overlay {
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    
+    .loading-overlay {
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    
+    .loading-overlay.fade-out {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// ===============================================
+//        STARTUP - Check login state
+// ===============================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Add required styles
+  addAdminStyles();
+  
+  // Initialize login form
+  initAdminLoginForm();
+  
+  // Check if admin is already logged in
+  if (isAdminLoggedIn()) {
+    console.log('✅ Admin already logged in, skipping login');
+    
+    // Hide login overlay
+    const loginOverlay = document.getElementById('adminLoginOverlay');
+    if (loginOverlay) {
+      loginOverlay.style.opacity = '0';
+      loginOverlay.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => {
+        loginOverlay.classList.add('hidden');
+        // Show loading overlay
+        const loadingOverlay = document.getElementById('adminLoadingOverlay');
+        if (loadingOverlay) {
+          loadingOverlay.style.display = 'flex';
+        }
+        // Start initialization
+        init();
+        // Add logout button
+        addAdminLogoutButton();
+      }, 300);
+    }
+  } else {
+    console.log('🔒 Admin login required');
+    // Hide loading overlay, show login
+    const loadingOverlay = document.getElementById('adminLoadingOverlay');
+    if (loadingOverlay) {
+      loadingOverlay.style.display = 'none';
+    }
+    const loginOverlay = document.getElementById('adminLoginOverlay');
+    if (loginOverlay) {
+      loginOverlay.classList.remove('hidden');
+      loginOverlay.style.opacity = '1';
+    }
+  }
+  
+  // Check for remembered username
+  const savedSession = localStorage.getItem(ADMIN_SESSION_KEY);
+  if (savedSession) {
+    try {
+      const data = JSON.parse(savedSession);
+      if (data.remember) {
+        const usernameInput = document.getElementById('adminUsername');
+        const rememberCheck = document.getElementById('adminRemember');
+        if (usernameInput) usernameInput.value = data.username || '';
+        if (rememberCheck) rememberCheck.checked = true;
+      }
+    } catch (e) {
+      // Invalid session data, ignore
+    }
+  }
+});

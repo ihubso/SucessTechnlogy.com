@@ -1,54 +1,55 @@
-// shared-header.js - Shared header with account system for all pages
-const ACCOUNT_STORAGE = 'shop_customer_accounts';
+// shared-header.js - Shared header with Supabase account system for all pages
 const CURRENT_USER_KEY = 'shop_current_user';
-const STORAGE_BUSINESS = 'business_info';
-const STORAGE_ORDERS_KEY = 'shop_orders_v1';
-
-function getStorage(key, def = null) {
-  const raw = localStorage.getItem(key);
-  if (!raw) return def;
-  try { return JSON.parse(raw); } catch (e) { return def; }
-}
-
-function setStorage(key, val) {
-  localStorage.setItem(key, JSON.stringify(val));
-}
-
-function getBusinessInfo() {
-  return getStorage(STORAGE_BUSINESS, {
-    shopName: "ShopBoss",
-    email: "hello@shopboss.com",
-    phone: "+1234567890",
-    address: "123 Commerce St"
-  });
-}
 
 // ===============================================
-//           CUSTOMER ACCOUNT SYSTEM
+//        SUPABASE ACCOUNT FUNCTIONS
 // ===============================================
 
-function getAccounts() {
-  return getStorage(ACCOUNT_STORAGE, []);
+async function getBusinessInfo() {
+  const data = await fetchBusinessInfoFromDB();
+  return data || { 
+    shopName: "Sucess Technology", 
+    email: "hello@Sucess Technology.com", 
+    phone: "+1234567890", 
+    address: "123 Commerce St",
+    facebook: "",
+    instagram: "",
+    tiktok: ""
+  };
 }
 
-function saveAccounts(accounts) {
-  setStorage(ACCOUNT_STORAGE, accounts);
+async function getAccounts() { 
+  return await fetchCustomersFromDB() || []; 
+}
+
+async function saveAccounts(accounts) { 
+  await saveCustomersToDB(accounts); 
 }
 
 function getCurrentUser() {
-  return getStorage(CURRENT_USER_KEY, null);
+  const raw = localStorage.getItem(CURRENT_USER_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
 }
 
 function setCurrentUser(user) {
-  setStorage(CURRENT_USER_KEY, user);
+  if (user) {
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(CURRENT_USER_KEY);
+  }
   updateAccountUI();
 }
 
-function handleRegister() {
+// ===============================================
+//           REGISTER / LOGIN / LOGOUT
+// ===============================================
+
+async function handleRegister() {
   const name = document.getElementById('regName')?.value?.trim();
   const email = document.getElementById('regEmail')?.value?.trim()?.toLowerCase();
-  const phone = document.getElementById('regPhone')?.value?.trim();
-  const address = document.getElementById('regAddress')?.value?.trim();
+  const phone = document.getElementById('regPhone')?.value?.trim() || '';
+  const address = document.getElementById('regAddress')?.value?.trim() || '';
   const password = document.getElementById('regPassword')?.value;
   const confirmPassword = document.getElementById('regConfirmPassword')?.value;
 
@@ -67,7 +68,7 @@ function handleRegister() {
     return;
   }
 
-  const accounts = getAccounts();
+  const accounts = await getAccounts();
   
   if (accounts.find(a => a.email === email)) {
     showToast("Email already registered");
@@ -85,7 +86,12 @@ function handleRegister() {
   };
 
   accounts.push(newAccount);
-  saveAccounts(accounts);
+  await saveAccounts(accounts);
+  
+  // Merge guest cart/wishlist if functions exist
+  if (typeof mergeGuestDataToUser === 'function') {
+    await mergeGuestDataToUser(newAccount.id);
+  }
   
   const loggedInUser = { ...newAccount };
   delete loggedInUser.password;
@@ -93,9 +99,13 @@ function handleRegister() {
   
   closeModal('accountModal');
   showToast(`Welcome, ${name}! 🎉`);
+  
+  // Refresh cart/wishlist if functions exist
+  if (typeof renderCart === 'function') await renderCart();
+  if (typeof renderWishlistModal === 'function') await renderWishlistModal();
 }
 
-function handleLogin() {
+async function handleLogin() {
   const email = document.getElementById('loginEmail')?.value?.trim()?.toLowerCase();
   const password = document.getElementById('loginPassword')?.value;
 
@@ -104,12 +114,17 @@ function handleLogin() {
     return;
   }
 
-  const accounts = getAccounts();
+  const accounts = await getAccounts();
   const account = accounts.find(a => a.email === email && a.password === password);
 
   if (!account) {
     showToast("Invalid email or password");
     return;
+  }
+
+  // Merge guest cart/wishlist if functions exist
+  if (typeof mergeGuestDataToUser === 'function') {
+    await mergeGuestDataToUser(account.id);
   }
 
   const loggedInUser = { ...account };
@@ -118,6 +133,10 @@ function handleLogin() {
   
   closeModal('accountModal');
   showToast(`Welcome back, ${account.name}! 👋`);
+  
+  // Refresh cart/wishlist if functions exist
+  if (typeof renderCart === 'function') await renderCart();
+  if (typeof renderWishlistModal === 'function') await renderWishlistModal();
 }
 
 function handleLogout() {
@@ -126,6 +145,10 @@ function handleLogout() {
     updateAccountUI();
     closeAccountDropdown();
     showToast('Logged out successfully');
+    
+    // Refresh cart/wishlist to show guest data
+    if (typeof renderCart === 'function') renderCart();
+    if (typeof renderWishlistModal === 'function') renderWishlistModal();
   }
 }
 
@@ -172,8 +195,14 @@ function updateAccountUI() {
     
     const logoutBtn = document.getElementById('logoutBtn');
     const loginRegisterBtns = document.getElementById('loginRegisterBtns');
+    
     if (logoutBtn) logoutBtn.classList.add('hidden');
     if (loginRegisterBtns) loginRegisterBtns.classList.remove('hidden');
+    
+    const dropdownName = document.getElementById('dropdownUserName');
+    const dropdownEmail = document.getElementById('dropdownUserEmail');
+    if (dropdownName) dropdownName.textContent = 'Guest';
+    if (dropdownEmail) dropdownEmail.textContent = '';
   }
 }
 
@@ -200,16 +229,20 @@ window.toggleAccountDropdown = function() {
   if (!dropdown.classList.contains('hidden')) {
     setTimeout(() => {
       document.addEventListener('click', function closeDrop(e) {
-        if (!dropdown.contains(e.target) && e.target.id !== 'accountBtn') {
+        if (!dropdown.contains(e.target) && e.target.id !== 'accountBtn' && !e.target.closest('#accountBtn')) {
           dropdown.classList.add('hidden');
           document.removeEventListener('click', closeDrop);
         }
-      });
+      }, { once: true });
     }, 100);
   }
 };
 
-function viewMyOrders() {
+// ===============================================
+//           VIEW MY ORDERS (Supabase)
+// ===============================================
+
+async function viewMyOrders() {
   closeAccountDropdown();
   const user = getCurrentUser();
   if (!user) {
@@ -217,11 +250,10 @@ function viewMyOrders() {
     return;
   }
 
-  const ordersRaw = localStorage.getItem(STORAGE_ORDERS_KEY);
-  const orders = ordersRaw ? JSON.parse(ordersRaw) : [];
+  const orders = await getOrdersFromDB() || [];
   
   const myOrders = orders.filter(o => {
-    const customerName = (o.customer || '').toLowerCase().trim();
+    const customerName = (o.customer_name || o.customer || '').toLowerCase().trim();
     const userName = (user.name || '').toLowerCase().trim();
     const userPhone = (user.phone || '').replace(/\D/g, '');
     const orderPhone = (o.phone || '').replace(/\D/g, '');
@@ -233,62 +265,52 @@ function viewMyOrders() {
     return nameMatch || phoneMatch || emailMatch;
   });
 
-  if (myOrders.length === 0) {
-    const msgHTML = `
-      <div id="myOrdersModal" class="modal" style="display: flex; align-items: center; justify-content: center;">
-        <div class="bg-white rounded-3xl max-w-md w-full p-8 mx-4 shadow-2xl text-center">
-          <span class="text-5xl mb-4 block">📋</span>
-          <h2 class="text-xl font-bold mb-2">No Orders Found</h2>
-          <p class="text-gray-500 mb-4">You haven't placed any orders yet.</p>
-          <p class="text-xs text-gray-400 mb-6">Logged in as: <strong>${user.name}</strong></p>
-          <button onclick="document.getElementById('myOrdersModal').remove();" 
-                  class="bg-primary text-white px-6 py-3 rounded-xl font-medium">
-            Close
-          </button>
-        </div>
-      </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', msgHTML);
-    document.getElementById('myOrdersModal').addEventListener('click', (e) => {
-      if (e.target.id === 'myOrdersModal') e.target.remove();
-    });
-    return;
-  }
+  // Remove existing overlay if any
+  const existing = document.getElementById('myOrdersOverlay');
+  if (existing) existing.remove();
 
-  const ordersHTML = `
-    <div id="myOrdersModal" class="modal" style="display: flex; align-items: center; justify-content: center;">
-      <div class="bg-white rounded-3xl max-w-2xl w-full p-6 mx-4 shadow-2xl max-h-[80vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-6">
-          <h2 class="text-2xl font-bold">📋 My Orders (${myOrders.length})</h2>
-          <button onclick="document.getElementById('myOrdersModal').remove()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">✕</button>
+  const overlayHTML = `
+    <div id="myOrdersOverlay" class="orders-overlay" style="position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;">
+      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);" onclick="document.getElementById('myOrdersOverlay').remove();document.body.style.overflow='';"></div>
+      <div style="position:relative;background:white;border-radius:2rem;width:min(90vw,700px);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.25);animation:slideUp 0.3s ease;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:1.5rem;border-bottom:1px solid #e5e7eb;">
+          <h2 style="font-size:1.5rem;font-weight:700;">📋 My Orders (${myOrders.length})</h2>
+          <button onclick="document.getElementById('myOrdersOverlay').remove();document.body.style.overflow='';" style="width:2.5rem;height:2.5rem;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:1.5rem;cursor:pointer;border:none;">✕</button>
         </div>
-        <div class="space-y-4">
-          ${myOrders.slice(0, 20).map(order => {
+        <div style="flex:1;overflow-y:auto;padding:1.5rem;">
+          ${myOrders.length === 0 ? `
+            <div style="text-align:center;padding:3rem 0;">
+              <span style="font-size:4rem;display:block;margin-bottom:1rem;">📦</span>
+              <h3 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;">No Orders Yet</h3>
+              <p style="color:#6b7280;">Start shopping to see your orders here!</p>
+              <p style="color:#9ca3af;font-size:0.75rem;margin-top:1rem;">Logged in as: <strong>${user.name}</strong></p>
+            </div>
+          ` : myOrders.slice(0, 20).map(order => {
             const status = order.status || 'pending';
-            const cfg = {
-              pending: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', icon: '🟡' },
-              confirmed: { bg: 'bg-green-50 border-green-200', text: 'text-green-700', icon: '🟢' },
-              processing: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', icon: '🔵' },
-              completed: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', icon: '✅' },
-              cancelled: { bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: '❌' }
+            const statusColors = {
+              pending: { bg: '#fef9c3', border: '#fde68a', text: '#a16207', icon: '🟡' },
+              confirmed: { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d', icon: '🟢' },
+              processing: { bg: '#dbeafe', border: '#bfdbfe', text: '#1d4ed8', icon: '🔵' },
+              completed: { bg: '#d1fae5', border: '#a7f3d0', text: '#065f46', icon: '✅' },
+              cancelled: { bg: '#fee2e2', border: '#fecaca', text: '#991b1b', icon: '❌' }
             };
-            const c = cfg[status] || cfg.pending;
+            const c = statusColors[status] || statusColors.pending;
             return `
-              <div class="${c.bg} rounded-2xl p-4 border">
-                <div class="flex justify-between items-start mb-2">
+              <div style="background:${c.bg};border-radius:1rem;padding:1rem;border:1px solid ${c.border};margin-bottom:0.75rem;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem;">
                   <div>
-                    <span class="font-mono font-bold">${order.id}</span>
-                    <span class="${c.text} text-sm ml-2 font-medium">${c.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                    <span style="font-family:monospace;font-weight:700;">${order.id}</span>
+                    <span style="color:${c.text};font-size:0.875rem;margin-left:0.5rem;font-weight:500;">${c.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
                   </div>
-                  <span class="font-bold text-lg">FCFA ${order.total.toFixed(2)}</span>
+                  <span style="font-weight:700;font-size:1.125rem;">FCFA ${(order.total || 0).toFixed(2)}</span>
                 </div>
-                <p class="text-xs text-gray-500">📅 ${new Date(order.date).toLocaleDateString()}</p>
-                <p class="text-xs text-gray-500">📍 ${order.address}</p>
-                <div class="mt-2 text-sm flex flex-wrap gap-1">
-                  ${order.items.map(i => `<span class="bg-white/50 px-2 py-0.5 rounded-full text-xs">${i.name} x${i.qty}</span>`).join('')}
+                <p style="font-size:0.75rem;color:#6b7280;">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', {weekday:'short',year:'numeric',month:'short',day:'numeric'})}</p>
+                <p style="font-size:0.75rem;color:#6b7280;">📍 ${order.address || 'N/A'}</p>
+                <div style="margin-top:0.5rem;display:flex;flex-wrap:wrap;gap:0.25rem;">
+                  ${(order.items || []).map(i => `<span style="background:rgba(255,255,255,0.5);padding:0.125rem 0.5rem;border-radius:999px;font-size:0.75rem;">${i.name} x${i.qty}</span>`).join('')}
                 </div>
-                <a href="track.html?order=${order.id}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-primary text-sm font-medium hover:underline bg-white/50 px-3 py-1 rounded-full">
-                  <i class="fas fa-external-link-alt text-xs"></i> Track Order
+                <a href="track.html?order=${order.id}" target="_blank" style="display:inline-flex;align-items:center;gap:0.25rem;margin-top:0.75rem;color:#e60012;font-size:0.875rem;font-weight:500;text-decoration:none;background:rgba(255,255,255,0.5);padding:0.25rem 0.75rem;border-radius:999px;">
+                  <i class="fas fa-external-link-alt" style="font-size:0.75rem;"></i> Track Order
                 </a>
               </div>
             `;
@@ -298,13 +320,14 @@ function viewMyOrders() {
     </div>
   `;
   
-  document.body.insertAdjacentHTML('beforeend', ordersHTML);
-  document.getElementById('myOrdersModal').addEventListener('click', (e) => {
-    if (e.target.id === 'myOrdersModal') e.target.remove();
-  });
+  document.body.insertAdjacentHTML('beforeend', overlayHTML);
+  document.body.style.overflow = 'hidden';
 }
 
-// Auto-fill checkout with user info
+// ===============================================
+//           AUTO-FILL CHECKOUT
+// ===============================================
+
 function autofillCheckoutFromAccount() {
   const user = getCurrentUser();
   if (!user) return;
@@ -318,11 +341,13 @@ function autofillCheckoutFromAccount() {
   if (addrInput && !addrInput.value) addrInput.value = user.address || '';
 }
 
-// Modal functions
+// ===============================================
+//           MODAL & TOAST FUNCTIONS
+// ===============================================
+
 window.openModal = (id) => {
   const el = document.getElementById(id);
   if (el) el.classList.remove('hidden');
-  // Auto-fill checkout if opening checkout modal
   if (id === 'checkoutModal') autofillCheckoutFromAccount();
 };
 
@@ -339,9 +364,34 @@ function showToast(msg) {
   setTimeout(() => t.style.opacity = '0', 2400);
 }
 
-// Initialize on page load
+// ===============================================
+//           INITIALIZATION
+// ===============================================
+
+// Attach form handlers
 document.addEventListener('DOMContentLoaded', () => {
   updateAccountUI();
+  const searchInput = document.getElementById('searchInput');
+if (searchInput && searchInput.value && !searchInput.dataset.userTyped) {
+  setTimeout(() => { searchInput.value = ''; }, 200);
+}
+  // Register form submit
+  const registerForm = document.getElementById('registerForm');
+  if (registerForm) {
+    registerForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleRegister();
+    });
+  }
+  
+  // Login form submit
+  const loginForm = document.getElementById('loginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleLogin();
+    });
+  }
   
   // Close modals when clicking backdrop
   document.addEventListener('click', (e) => {
@@ -349,4 +399,39 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.classList.add('hidden');
     }
   });
+  
+  // Initialize business info in header
+  initBusinessInfo();
 });
+
+async function initBusinessInfo() {
+  try {
+    const business = await getBusinessInfo();
+    const shopName = business.shopName || business.shop_name || 'Sucess Technology';
+    
+    // Update header shop names
+    document.querySelectorAll('#headerShopName, #headerShopName123').forEach(el => {
+      el.innerHTML = (shopName && shopName.toLowerCase() !== 'Sucess Technology') 
+        ? shopName 
+        : `shop<span style="color:#e60012;">Boss</span>`;
+    });
+    
+    // Update footer
+    const footerEmail = document.getElementById('footerEmail');
+    const footerPhone = document.getElementById('footerPhone');
+    const footerAddress = document.getElementById('footerAddress');
+    if (footerEmail) footerEmail.textContent = business.email || '';
+    if (footerPhone) footerPhone.textContent = business.phone || '';
+    if (footerAddress) footerAddress.textContent = business.address || '';
+    
+    // Social links
+    const fb = document.getElementById('facebookLink');
+    const ig = document.getElementById('instagramLink');
+    const tt = document.getElementById('tiktokLink');
+    if (fb) { fb.style.display = business.facebook ? 'inline-block' : 'none'; if (business.facebook) fb.href = business.facebook; }
+    if (ig) { ig.style.display = business.instagram ? 'inline-block' : 'none'; if (business.instagram) ig.href = business.instagram; }
+    if (tt) { tt.style.display = business.tiktok ? 'inline-block' : 'none'; if (business.tiktok) tt.href = business.tiktok; }
+  } catch (e) {
+    console.warn('Could not load business info');
+  }
+}

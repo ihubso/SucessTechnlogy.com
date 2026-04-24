@@ -1,4 +1,18 @@
-// products-page.js - Standalone version (no conflicts with script.js)
+// products-page.js - Standalone version with Supabase Integration
+const STORAGE = {
+  PRODUCTS: 'shop_products_v3',
+  CART: 'shop_cart_v1',
+  WISHLIST: 'shop_wishlist',
+  REVIEWS: 'shop_reviews',
+  BUSINESS: 'business_info',
+  CONTACT: 'contact_location_info',
+  FEATURED: 'featured_product_ids',
+  DEALS: 'deals_of_today',
+  ORDERS: 'shop_orders_v1',
+  SEARCH_ANALYTICS: 'shop_search_analytics',
+  VIEW_ANALYTICS: 'shop_view_analytics',
+  FAILED_SEARCHES: 'shop_failed_searches'
+};
 (function() {
   'use strict';
   
@@ -10,74 +24,76 @@
   let _currentSearch = "";
   
   // Wait for everything to load
-function initialize() {
+  async function initialize() {
     if (typeof getProducts !== 'function') {
       console.error('Required functions not loaded yet');
       setTimeout(initialize, 100);
       return;
     }
     
-    renderAllProducts();
-    buildCategoryFilters();
+    await renderAllProducts();
+    await buildCategoryFilters();
     initSearch();
     initSort();
-    updateCartCount();
-    updateWishlistCount();
+    await updateCartCount();
+    await updateWishlistCount();
     initCartHover();
     handleUrlFilters();
-     handleProductFromUrl();
+    handleProductFromUrl();
     
     // Override renderCart to update counts after cart changes
-    const originalRenderCart = renderCart;
-    renderCart = function() {
-      originalRenderCart();
-      updateCartCount();
-    };
+    const originalRenderCart = window.renderCart;
+    if (originalRenderCart) {
+      window.renderCart = async function() {
+        await originalRenderCart();
+        await updateCartCount();
+      };
+    }
   }
-  function handleProductFromUrl() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const productId = urlParams.get('product');
   
-  if (productId) {
-    // Wait a short moment for everything to render
-    setTimeout(() => {
-      if (typeof openProductDetail === 'function') {
-        const product = getProducts().find(p => p.id === productId);
-        if (product) {
-          openProductDetail(productId);
-        } else {
-          // Try to find by name match if ID doesn't match exactly
-          const allProducts = getProducts();
-          const matchedProduct = allProducts.find(p => 
-            p.id.toLowerCase().includes(productId.toLowerCase()) ||
-            (p.name && p.name.toLowerCase().replace(/[^a-z0-9]/g, '-') === productId.toLowerCase())
-          );
-          
-          if (matchedProduct) {
-            openProductDetail(matchedProduct.id);
+  async function handleProductFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const productId = urlParams.get('product');
+    
+    if (productId) {
+      setTimeout(async () => {
+        if (typeof openProductDetail === 'function') {
+          const product = (await getProducts()).find(p => p.id === productId);
+          if (product) {
+            openProductDetail(productId);
           } else {
-            console.log('Product not found:', productId);
+            const allProducts = await getProducts();
+            const matchedProduct = allProducts.find(p => 
+              p.id.toLowerCase().includes(productId.toLowerCase()) ||
+              (p.name && p.name.toLowerCase().replace(/[^a-z0-9]/g, '-') === productId.toLowerCase())
+            );
+            
+            if (matchedProduct) {
+              openProductDetail(matchedProduct.id);
+            } else {
+              console.log('Product not found:', productId);
+            }
           }
         }
-      }
-    }, 500);
+      }, 500);
+    }
   }
-}
+  
   // Update cart count in header
-  function updateCartCount() {
+  async function updateCartCount() {
     if (typeof getCart !== 'function') return;
-    const cart = getCart();
+    const cart = await getCart();
     const countElements = document.querySelectorAll('#cartCount');
-    const totalItems = cart.reduce((s, i) => s + i.qty, 0);
+    const totalItems = cart.reduce((s, i) => s + (i.qty || 0), 0);
     countElements.forEach(el => {
       if (el) el.innerText = totalItems;
     });
   }
   
   // Update wishlist count in header
-  function updateWishlistCount() {
+  async function updateWishlistCount() {
     if (typeof getWishlist !== 'function') return;
-    const wishlist = getWishlist();
+    const wishlist = await getWishlist();
     const countElements = document.querySelectorAll('#wishlistCount');
     countElements.forEach(el => {
       if (el) el.innerText = wishlist.length;
@@ -90,13 +106,15 @@ function initialize() {
     const filterParam = urlParams.get('filter');
     
     if (filterParam === 'hot') {
-      document.title = 'Hot Products · ShopBoss';
-      document.getElementById('pageTitle').textContent = '🔥 Hot Products';
+      document.title = 'Hot Products · Sucess Technology';
+      const titleEl = document.getElementById('pageTitle');
+      if (titleEl) titleEl.textContent = '🔥 Hot Products';
     } else if (filterParam === 'new') {
-      document.title = 'New Arrivals · ShopBoss';
-      document.getElementById('pageTitle').textContent = '✨ New Arrivals';
+      document.title = 'New Arrivals · Sucess Technology';
+      const titleEl = document.getElementById('pageTitle');
+      if (titleEl) titleEl.textContent = '✨ New Arrivals';
     } else {
-      document.title = 'All Products · ShopBoss';
+      document.title = 'All Products · Sucess Technology';
     }
   }
   
@@ -130,9 +148,9 @@ function initialize() {
   }
   
   // Render quick cart preview
-  function renderCartPreview() {
+  async function renderCartPreview() {
     if (typeof getCart !== 'function') return;
-    const cart = getCart();
+    const cart = await getCart();
     const preview = document.getElementById('cartPreview');
     if (!preview) return;
     
@@ -141,7 +159,7 @@ function initialize() {
       return;
     }
     
-    const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+    const total = cart.reduce((s, i) => s + ((i.price || 0) * (i.qty || 0)), 0);
     
     preview.innerHTML = `
       <div class="p-4">
@@ -149,10 +167,10 @@ function initialize() {
         <div class="space-y-2 max-h-64 overflow-y-auto">
           ${cart.slice(0, 3).map(item => `
             <div class="flex gap-3 border-b pb-2">
-              <img src="${item.image}" class="w-12 h-12 object-cover rounded">
+              <img src="${item.image || 'https://placehold.co/100x100'}" class="w-12 h-12 object-cover rounded">
               <div class="flex-1">
-                <p class="text-sm font-medium truncate">${item.name}</p>
-                <p class="text-xs text-gray-500">${item.qty} x FCFA ${item.price.toFixed(2)}</p>
+                <p class="text-sm font-medium truncate">${item.name || 'Product'}</p>
+                <p class="text-xs text-gray-500">${item.qty || 0} x FCFA ${(item.price || 0).toFixed(2)}</p>
               </div>
             </div>
           `).join('')}
@@ -169,25 +187,25 @@ function initialize() {
     `;
   }
   
-function initSearch() {
+  function initSearch() {
     const input = document.getElementById('searchInput');
     if (!input) return;
     
-    input.addEventListener('input', (e) => {
+    input.addEventListener('input', async (e) => {
       _currentSearch = e.target.value;
       _currentPage = 1;
       
-      // ✅ Track search silently
+      // Track search silently
       if (_currentSearch.trim().length >= 2) {
-        trackProductSearch(_currentSearch);
-        const products = getProducts();
+        await trackProductSearch(_currentSearch);
+        const products = await getProducts();
         const results = products.filter(p =>
           p.name.toLowerCase().includes(_currentSearch.toLowerCase())
         ).length;
-        trackSearchResults(_currentSearch, results);
+        await trackSearchResults(_currentSearch, results);
       }
       
-      renderAllProducts();
+      await renderAllProducts();
     });
   }
   
@@ -202,9 +220,9 @@ function initSearch() {
     });
   }
   
-  function buildCategoryFilters() {
+  async function buildCategoryFilters() {
     if (typeof getProducts !== 'function') return;
-    let products = getProducts();
+    let products = await getProducts();
     let categories = [...new Set(products.map(p => p.category))].sort();
     let container = document.getElementById('categoryFilters');
     if (!container) return;
@@ -243,9 +261,9 @@ function initSearch() {
     return sorted;
   }
   
-function renderAllProducts() {
+  async function renderAllProducts() {
     if (typeof getProducts !== 'function') return;
-    let products = getProducts();
+    let products = await getProducts();
   
     const urlParams = new URLSearchParams(window.location.search);
     const filterParam = urlParams.get('filter');
@@ -270,7 +288,6 @@ function renderAllProducts() {
     let sorted = getSortedProductsSafe(products);
     let totalPages = Math.ceil(sorted.length / _itemsPerPage);
     
-    // ✅ If only 1 page OR on last page, show ALL products
     if (totalPages <= 1 || _currentPage >= totalPages) {
       _currentPage = 1;
       totalPages = 1;
@@ -284,14 +301,15 @@ function renderAllProducts() {
     const container = document.getElementById('productsGrid');
     if (container) {
       if (paginated.length === 0 && !_currentSearch && _currentCategory === 'all') {
-        products = getProducts();
+        products = await getProducts();
         sorted = getSortedProductsSafe(products);
         paginated = sorted;
         totalPages = 1;
       }
       
-      container.innerHTML = paginated.length
-        ? paginated.map(p => renderProductCardEnhanced(p)).join('')
+      const cardsHtml = await Promise.all(paginated.map(p => renderProductCardEnhanced(p)));
+      container.innerHTML = cardsHtml.length
+        ? cardsHtml.join('')
         : '<div class="col-span-full text-center py-10 text-gray-500">No products found.</div>';
     }
   
@@ -303,7 +321,6 @@ function renderAllProducts() {
     let paginationDiv = document.getElementById('paginationControls');
     if (!paginationDiv) return;
   
-    // ✅ Don't show pagination if only 1 page (all products shown)
     if (totalPages <= 1) {
       paginationDiv.innerHTML = '';
       return;
@@ -311,12 +328,10 @@ function renderAllProducts() {
   
     let html = '<div class="flex flex-wrap gap-2 justify-center">';
     
-    // Previous button
     if (_currentPage > 1) {
       html += `<button onclick="window.goToProductsPage(${_currentPage - 1})" class="px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors">← Prev</button>`;
     }
     
-    // Page numbers
     for (let i = 1; i <= totalPages; i++) {
       if (i === 1 || i === totalPages || (i >= _currentPage - 2 && i <= _currentPage + 2)) {
         html += `<button onclick="window.goToProductsPage(${i})" class="px-4 py-2 border rounded-lg transition-colors ${i === _currentPage ? 'bg-primary text-white border-primary' : 'hover:bg-gray-50'}">${i}</button>`;
@@ -325,7 +340,6 @@ function renderAllProducts() {
       }
     }
     
-    // Next button
     if (_currentPage < totalPages) {
       html += `<button onclick="window.goToProductsPage(${_currentPage + 1})" class="px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors">Next →</button>`;
     }
@@ -334,14 +348,13 @@ function renderAllProducts() {
     paginationDiv.innerHTML = html;
   }
   
-  function renderProductCardEnhanced(p) {
-    let wishlist = typeof getWishlist === 'function' ? getWishlist() : [];
+  async function renderProductCardEnhanced(p) {
+    let wishlist = typeof getWishlist === 'function' ? await getWishlist() : [];
     let isWished = wishlist.includes(p.id);
-    let avgRating = typeof getAverageRating === 'function' ? getAverageRating(p.id) : 0;
+    let avgRating = typeof getAverageRating === 'function' ? await getAverageRating(p.id) : 0;
     let reviewCount = typeof getReviewCount === 'function' ? getReviewCount(p.id) : 0;
     
-    // Check for deal
-    const deals = typeof getDealsOfToday === 'function' ? getDealsOfToday() : [];
+    const deals = typeof getDealsOfToday === 'function' ? await getDealsOfToday() : [];
     const dealInfo = deals.find(d => d.id === p.id);
     const hasDeal = !!dealInfo;
     const discount = hasDeal ? dealInfo.discount : 0;
@@ -406,13 +419,12 @@ function renderAllProducts() {
   }
   
   // Quick add to cart
-  window.quickAddToCartPage = function(id) {
-    if (typeof getProducts !== 'function' || typeof addToCart !== 'function') return;
+  window.quickAddToCartPage = async function(id) {
+    if (typeof getProducts !== 'function' || typeof window.addToCart !== 'function') return;
     
-    const product = getProducts().find(p => p.id === id);
+    const product = (await getProducts()).find(p => p.id === id);
     if (!product) return;
     
-    // Check if product has variants
     if (product.variants && product.variants.length > 0) {
       if (typeof openProductDetail === 'function') {
         openProductDetail(id);
@@ -420,51 +432,20 @@ function renderAllProducts() {
       return;
     }
     
-    addToCart(id, 1, {});
-    updateCartCount();
+    await window.addToCart(id, 1, {});
+    await updateCartCount();
     if (typeof showToast === 'function') {
       showToast(`${product.name} added to cart!`);
     }
   };
   
   // Quick toggle wishlist
-  window.quickToggleWishlistPage = function(id) {
+  window.quickToggleWishlistPage = async function(id) {
     if (typeof toggleWishlist !== 'function') return;
-    toggleWishlist(id);
-    updateWishlistCount();
-    renderAllProducts();
+    await toggleWishlist(id);
+    await updateWishlistCount();
+    await renderAllProducts();
   };
-  
-  function renderPagination(totalPages) {
-    let paginationDiv = document.getElementById('paginationControls');
-    if (!paginationDiv) return;
-  
-    if (totalPages <= 1) {
-      paginationDiv.innerHTML = '';
-      return;
-    }
-  
-    let html = '<div class="flex gap-2">';
-    
-    if (_currentPage > 1) {
-      html += `<button onclick="window.goToProductsPage(${_currentPage - 1})" class="px-4 py-2 border rounded-lg hover:bg-gray-50">← Prev</button>`;
-    }
-    
-    for (let i = 1; i <= totalPages; i++) {
-      if (i === 1 || i === totalPages || (i >= _currentPage - 2 && i <= _currentPage + 2)) {
-        html += `<button onclick="window.goToProductsPage(${i})" class="px-4 py-2 border rounded-lg ${i === _currentPage ? 'bg-primary text-white' : 'hover:bg-gray-50'}">${i}</button>`;
-      } else if (i === _currentPage - 3 || i === _currentPage + 3) {
-        html += '<span class="px-2 text-gray-400">...</span>';
-      }
-    }
-    
-    if (_currentPage < totalPages) {
-      html += `<button onclick="window.goToProductsPage(${_currentPage + 1})" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Next →</button>`;
-    }
-    
-    html += '</div>';
-    paginationDiv.innerHTML = html;
-  }
   
   window.goToProductsPage = function(page) {
     _currentPage = page;
@@ -492,14 +473,15 @@ function renderAllProducts() {
     initialize();
   }
 })();
+
 // Handle product from URL when page loads
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const productId = urlParams.get('product');
   
   if (productId && typeof openProductDetail === 'function') {
-    setTimeout(() => {
-      const products = typeof getProducts === 'function' ? getProducts() : [];
+    setTimeout(async () => {
+      const products = typeof getProducts === 'function' ? await getProducts() : [];
       const product = products.find(p => p.id === productId);
       
       if (product) {

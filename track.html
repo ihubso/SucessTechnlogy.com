@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Order Status · ShopBoss</title>
+  <title>Order Status · Sucess Technology</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -26,6 +26,10 @@
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
     
     .status-pending { color: #f59e0b; }
@@ -67,6 +71,7 @@
     .step-inactive { background: #e5e7eb; color: #9ca3af; }
     
     .animate-slide-in { animation: slideIn 0.5s ease forwards; }
+    .animate-spin { animation: spin 1s linear infinite; }
     
     .modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 1000; }
     .hidden { display: none; }
@@ -81,12 +86,9 @@
         <a href="index.html" class="text-xl font-bold hover:text-primary transition-colors">
           <i class="fas fa-arrow-left mr-2"></i>Back to Shop
         </a>
-        
         <div class="flex items-center gap-3">
-          <!-- Account Button -->
           <div class="relative">
-            <button id="accountBtn" onclick="toggleAccountDropdown()" 
-                    class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <button id="accountBtn" onclick="toggleAccountDropdown()" class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
               <i class="fas fa-user text-xl"></i>
             </button>
             <div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
@@ -228,10 +230,7 @@
           <input type="password" id="loginPassword" placeholder="Password" class="w-full border p-3 rounded-xl" />
           <button onclick="handleLogin()" class="w-full bg-primary text-white py-3 rounded-xl font-bold">Login</button>
         </div>
-        <p class="text-center text-sm text-gray-500 mt-4">
-          Don't have an account? 
-          <button onclick="showRegisterForm()" class="text-primary font-semibold hover:underline">Register</button>
-        </p>
+        <p class="text-center text-sm text-gray-500 mt-4">Don't have an account? <button onclick="showRegisterForm()" class="text-primary font-semibold hover:underline">Register</button></p>
       </div>
       <div id="registerForm" class="hidden">
         <div class="text-center mb-6">
@@ -250,32 +249,23 @@
           <input type="password" id="regConfirmPassword" placeholder="Confirm Password" class="w-full border p-3 rounded-xl" />
           <button onclick="handleRegister()" class="w-full bg-primary text-white py-3 rounded-xl font-bold">Create Account</button>
         </div>
-        <p class="text-center text-sm text-gray-500 mt-4">
-          Already have an account? 
-          <button onclick="showLoginForm()" class="text-primary font-semibold hover:underline">Login</button>
-        </p>
+        <p class="text-center text-sm text-gray-500 mt-4">Already have an account? <button onclick="showLoginForm()" class="text-primary font-semibold hover:underline">Login</button></p>
       </div>
       <button onclick="closeModal('accountModal')" class="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">✕</button>
     </div>
   </div>
 
-  <!-- Toast Message -->
+  <!-- Toast -->
   <div id="toastMsg" style="position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #0f172a; color: white; padding: 10px 24px; border-radius: 40px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 9999; white-space: nowrap;"></div>
-<script src="supabase-config.js"></script>
-<script src="supabase-api.js"></script>
+
+  <script src="supabase-config.js"></script>
+  <script src="supabase-api.js"></script>
   <script src="shared-header.js"></script>
   
-  
   <script>
-    // Order Tracking Logic
-    const STORAGE_ORDERS = 'shop_orders_v1';
-  
-    
-    function getBusinessInfo() {
-      const raw = localStorage.getItem(STORAGE_BUSINESS);
-      if (!raw) return { phone: "+1234567890" };
-      try { return JSON.parse(raw); } catch(e) { return { phone: "+1234567890" }; }
-    }
+    // ===============================================
+    //        ORDER TRACKING - SUPABASE POWERED
+    // ===============================================
     
     function getStatusInfo(status) {
       const statusMap = {
@@ -314,6 +304,9 @@
         }
       });
       
+      // If completed, fill all the way
+      if (status === 'completed') progressWidth = 100;
+      
       const progressFill = document.getElementById('progressFill');
       if (progressFill) {
         setTimeout(() => { progressFill.style.width = `${progressWidth}%`; }, 300);
@@ -327,7 +320,7 @@
       const statusInfo = getStatusInfo(order.status || 'pending');
       
       document.getElementById('orderIdDisplay').textContent = `Order #${order.id}`;
-      document.getElementById('orderDate').textContent = `Placed on ${new Date(order.date).toLocaleDateString('en-US', { 
+      document.getElementById('orderDate').textContent = `Placed on ${new Date(order.date || order.created_at).toLocaleDateString('en-US', { 
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' 
       })}`;
       
@@ -335,19 +328,20 @@
       statusBadge.className = `status-badge ${statusInfo.bg} ${statusInfo.color}`;
       statusBadge.innerHTML = `<i class="fas ${statusInfo.icon}"></i> ${statusInfo.text}`;
       
-      document.getElementById('customerName').textContent = order.customer;
-      document.getElementById('customerPhone').textContent = order.phone;
-      document.getElementById('customerAddress').textContent = order.address;
-      document.getElementById('orderTotal').textContent = `FCFA ${order.total.toFixed(2)}`;
+      document.getElementById('customerName').textContent = order.customer_name || order.customer || 'N/A';
+      document.getElementById('customerPhone').textContent = order.phone || 'N/A';
+      document.getElementById('customerAddress').textContent = order.address || 'N/A';
+      document.getElementById('orderTotal').textContent = `FCFA ${(order.total || 0).toFixed(2)}`;
       
+      const items = order.items || [];
       const itemsList = document.getElementById('orderItemsList');
-      itemsList.innerHTML = order.items.map(item => `
+      itemsList.innerHTML = items.map(item => `
         <div class="flex justify-between items-center bg-gray-50 rounded-xl p-3">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center text-sm font-bold">${item.qty}x</div>
-            <span class="font-medium">${item.name}</span>
+            <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center text-sm font-bold">${item.qty || 0}x</div>
+            <span class="font-medium">${item.name || 'Product'}</span>
           </div>
-          <span class="font-semibold">FCFA ${(item.price * item.qty).toFixed(2)}</span>
+          <span class="font-semibold">FCFA ${((item.price || 0) * (item.qty || 0)).toFixed(2)}</span>
         </div>
       `).join('');
       
@@ -358,7 +352,7 @@
       updateProgressSteps(order.status || 'pending');
     }
     
-    function loadOrder() {
+    async function loadOrder() {
       const urlParams = new URLSearchParams(window.location.search);
       const orderId = urlParams.get('order');
       
@@ -368,9 +362,9 @@
         return;
       }
       
-      setTimeout(() => {
-        const raw = localStorage.getItem(STORAGE_ORDERS);
-        const orders = raw ? JSON.parse(raw) : [];
+      try {
+        // Fetch from Supabase
+        const orders = await getOrdersFromDB() || [];
         const order = orders.find(o => o.id === orderId);
         
         if (!order) {
@@ -380,15 +374,23 @@
         }
         
         renderOrderDetails(order);
-      }, 800);
+      } catch (error) {
+        console.error('Error loading order:', error);
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('notFoundState').classList.remove('hidden');
+      }
     }
     
-    function contactSupport() {
-      const business = getBusinessInfo();
-      const phone = (business.phone || '+1234567890').replace(/\D/g, '');
-      const orderId = new URLSearchParams(window.location.search).get('order');
-      const msg = `Hello! I have a question about my order #${orderId}`;
-      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    async function contactSupport() {
+      try {
+        const business = await fetchBusinessInfoFromDB();
+        const phone = (business?.phone || '+1234567890').replace(/\D/g, '');
+        const orderId = new URLSearchParams(window.location.search).get('order');
+        const msg = `Hello! I have a question about my order #${orderId}`;
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+      } catch (e) {
+        window.open('https://wa.me/1234567890', '_blank');
+      }
     }
     
     document.addEventListener('DOMContentLoaded', loadOrder);

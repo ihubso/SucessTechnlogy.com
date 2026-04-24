@@ -1556,6 +1556,14 @@ async function openEditProduct(id) {
   updateMultiImagePreviews('editMultiImagePreviews', 'editImagesJsonField', editAddedImages);
   editVariantsList = p.variants ? JSON.parse(JSON.stringify(p.variants)) : [];
   renderVariantsUI('editVariantsContainer', editVariantsList);
+  const editPreviewImg = document.getElementById('editMainImagePreviewImg');
+if (p.image) {
+  editPreviewImg.src = p.image;
+  editPreviewImg.classList.remove('hidden');
+  document.getElementById('editMainImageField').value = p.image;
+} else {
+  editPreviewImg.classList.add('hidden');
+}
 
   window.editingId = id;
   openModal('editModal');
@@ -1568,7 +1576,11 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   let fd = new FormData(e.target);
   
   let allImages = [...editAddedImages];
-  const mainImage = fd.get('image');
+  // Get image from hidden field (upload) or URL input
+const mainImage = document.getElementById('editMainImageField')?.value || 
+                  fd.get('imageUrl') || 
+                  fd.get('image') || 
+                  'https://placehold.co/600x400';
   
   if (allImages.length === 0) {
     allImages = [mainImage || 'https://placehold.co/600x400'];
@@ -1638,7 +1650,11 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   let fd = new FormData(e.target);
   
-  const mainImage = fd.get('image') || 'https://placehold.co/600x400';
+ // Get image from hidden field (upload) or URL input
+const mainImage = document.getElementById('mainImageField')?.value || 
+                  fd.get('imageUrl') || 
+                  fd.get('image') || 
+                  'https://placehold.co/600x400';
   
   let allImages = [...addedImages];
   if (allImages.length === 0) {
@@ -1737,6 +1753,53 @@ document.getElementById('imageUpload')?.addEventListener('change', (e) => {
       document.querySelector('#adminForm input[name="image"]').value = ev.target.result;
     };
     reader.readAsDataURL(file);
+  }
+});
+// Main image upload for Add Product form
+document.getElementById('imageUpload')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    try {
+      const base64 = await fileToBase64(file);
+      const compressed = await compressImage(base64, 800, 0.7);
+      
+      // Set the main image field
+      document.getElementById('mainImageField').value = compressed;
+      
+      // Show preview
+      const previewImg = document.getElementById('mainImagePreviewImg');
+      previewImg.src = compressed;
+      previewImg.classList.remove('hidden');
+      
+      console.log('✅ Main image uploaded and compressed');
+    } catch (err) {
+      console.error('Error processing main image:', err);
+      showToast('Error processing image');
+    }
+  }
+});
+
+// Main image upload for Edit Product form
+document.getElementById('editImageUpload')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    try {
+      const base64 = await fileToBase64(file);
+      const compressed = await compressImage(base64, 800, 0.7);
+      
+      // Set the main image field
+      document.getElementById('editMainImageField').value = compressed;
+      
+      // Show preview
+      const previewImg = document.getElementById('editMainImagePreviewImg');
+      previewImg.src = compressed;
+      previewImg.classList.remove('hidden');
+      
+      console.log('✅ Main image uploaded and compressed for edit');
+    } catch (err) {
+      console.error('Error processing main image:', err);
+      showToast('Error processing image');
+    }
   }
 });
 

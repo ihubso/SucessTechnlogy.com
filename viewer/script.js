@@ -2348,15 +2348,21 @@ function closeAccountDropdown() {
   document.getElementById('accountDropdown')?.classList.add('hidden');
 }
 
+// ===============================================
+//           VIEW MY ORDERS (Supabase)
+// ===============================================
+
 async function viewMyOrders() {
   closeAccountDropdown();
   const user = getCurrentUser();
-  if (!user) { 
-    showToast("Please login first"); 
-    return; 
+  if (!user) {
+    showToast("Please login first");
+    return;
   }
+
+  // Fetch orders from Supabase (or fallback to localStorage)
+  const orders = await getOrdersFromDB() || JSON.parse(localStorage.getItem('shop_orders_v1') || '[]');
   
-  const orders = await getOrders();
   const myOrders = orders.filter(o => {
     const customerName = (o.customer_name || o.customer || '').toLowerCase().trim();
     const userName = (user.name || '').toLowerCase().trim();
@@ -2367,68 +2373,89 @@ async function viewMyOrders() {
     const emailMatch = user.email && o.email && o.email.toLowerCase() === user.email.toLowerCase();
     return nameMatch || phoneMatch || emailMatch;
   });
-  
-  const overlayHTML = `
-    <div id="myOrdersOverlay" class="orders-overlay">
-      <div class="orders-overlay-backdrop" onclick="closeMyOrdersOverlay()"></div>
-      <div class="orders-overlay-panel">
-        <div class="orders-overlay-header">
-          <h2>📋 My Orders (${myOrders.length})</h2>
-          <button onclick="closeMyOrdersOverlay()" class="orders-overlay-close">✕</button>
+
+  // Remove existing overlay if any
+  const existingOverlay = document.getElementById('myOrdersOverlay');
+  if (existingOverlay) existingOverlay.remove();
+
+  // Build modal HTML – consistent with your design
+  const modalHTML = `
+    <div id="myOrdersOverlay" class="my-orders-modal fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm" style="display: flex;">
+      <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-modal-slide-up mx-4">
+        <div class="flex justify-between items-center p-6 border-b">
+          <h2 class="text-2xl font-bold">📋 My Orders (${myOrders.length})</h2>
+          <button class="close-orders-modal w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-2xl">×</button>
         </div>
-        <div class="orders-overlay-content">
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
           ${myOrders.length === 0 ? `
             <div class="text-center py-12">
-              <span class="text-6xl mb-4 block">📦</span>
+              <div class="text-6xl mb-4">📦</div>
               <h3 class="text-xl font-bold mb-2">No Orders Yet</h3>
               <p class="text-gray-500">Start shopping to see your orders here!</p>
+              <p class="text-xs text-gray-400 mt-4">Logged in as: <strong>${escapeHtml(user.name)}</strong></p>
             </div>
           ` : myOrders.slice(0, 20).map(order => {
             const status = order.status || 'pending';
             const statusConfig = {
-              pending: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', icon: '🟡' },
-              confirmed: { bg: 'bg-green-50 border-green-200', text: 'text-green-700', icon: '🟢' },
-              processing: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', icon: '🔵' },
-              completed: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', icon: '✅' },
-              cancelled: { bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: '❌' }
+              pending: { bg: '#fef9c3', border: '#fde68a', text: '#a16207', icon: '🟡' },
+              confirmed: { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d', icon: '🟢' },
+              processing: { bg: '#dbeafe', border: '#bfdbfe', text: '#1d4ed8', icon: '🔵' },
+              completed: { bg: '#d1fae5', border: '#a7f3d0', text: '#065f46', icon: '✅' },
+              cancelled: { bg: '#fee2e2', border: '#fecaca', text: '#991b1b', icon: '❌' }
             };
             const cfg = statusConfig[status] || statusConfig.pending;
             return `
-              <div class="${cfg.bg} rounded-2xl p-4 border ${cfg.border}">
-                <div class="flex justify-between items-start mb-2">
+              <div class="rounded-2xl p-4 border" style="background:${cfg.bg}; border-color:${cfg.border};">
+                <div class="flex justify-between items-start flex-wrap gap-2">
                   <div>
                     <span class="font-mono font-bold">${order.id}</span>
-                    <span class="${cfg.text} text-sm ml-2 font-medium">${cfg.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                    <span class="ml-2 text-sm font-medium" style="color:${cfg.text}">${cfg.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
                   </div>
-                  <span class="font-bold text-lg">FCFA ${order.total.toFixed(2)}</span>
+                  <span class="font-bold text-lg">FCFA ${(order.total || 0).toFixed(2)}</span>
                 </div>
-                <p class="text-xs text-gray-500">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</p>
-                <p class="text-xs text-gray-500">📍 ${order.address}</p>
-                <div class="mt-2 text-sm flex flex-wrap gap-1">
-                  ${(order.items || []).map(i => `<span class="bg-white/50 px-2 py-0.5 rounded-full text-xs">${i.name} x${i.qty}</span>`).join('')}
+                <p class="text-xs text-gray-600 mt-2">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
+                <p class="text-xs text-gray-600">📍 ${escapeHtml(order.address || 'N/A')}</p>
+                <div class="flex flex-wrap gap-1 mt-2">
+                  ${(order.items || []).map(i => `<span class="bg-white/60 rounded-full px-2 py-0.5 text-xs">${escapeHtml(i.name)} x${i.qty}</span>`).join('')}
                 </div>
-                <a href="track.html?order=${order.id}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-primary text-sm font-medium hover:underline bg-white/50 px-3 py-1 rounded-full">
-                  <i class="fas fa-external-link-alt text-xs"></i> Track Order
+                <a href="track.html?order=${order.id}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-sm text-primary font-medium hover:underline">
+                  <i class="fas fa-external-link-alt"></i> Track Order
                 </a>
-              </div>`;
+              </div>
+            `;
           }).join('')}
         </div>
       </div>
     </div>
   `;
-  
-  // Remove existing overlay if any
-  const existing = document.getElementById('myOrdersOverlay');
-  if (existing) existing.remove();
-  
-  document.body.insertAdjacentHTML('beforeend', overlayHTML);
-  document.body.style.overflow = 'hidden';
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  document.body.style.overflow = 'hidden'; // prevent background scrolling
+
+  const modalContainer = document.getElementById('myOrdersOverlay');
+  const closeBtn = modalContainer.querySelector('.close-orders-modal');
+
+  const closeModal = () => {
+    modalContainer.remove();
+    document.body.style.overflow = '';
+  };
+
+  closeBtn.addEventListener('click', closeModal);
+  modalContainer.addEventListener('click', (e) => {
+    if (e.target === modalContainer) closeModal();
+  });
 }
-window.closeMyOrdersOverlay = function() {
-  const overlay = document.getElementById('myOrdersOverlay');
-  if (overlay) overlay.remove();
-  document.body.style.overflow = '';
-};
+
+// Helper to escape HTML (prevent injection)
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
 
 
 

@@ -244,6 +244,7 @@ async function fetchCartFromDB(sessionId) {
   }
 }
 
+
 async function saveCartToDB(sessionId, cart) {
   const client = getSupabase();
   if (!client) return;
@@ -255,22 +256,28 @@ async function saveCartToDB(sessionId, cart) {
     if (cart.length > 0) {
       const rows = cart.map(item => ({
         session_id: sessionId,
-        product_id: item.id,
-        name: item.name,
-        price: item.price,
-        qty: item.qty,
-        image: item.image
+        product_id: item.product_id || item.id || '',
+        name: item.name || 'Unknown Product',
+        price: item.price || 0,
+        qty: item.qty || 1,
+        image: item.image || 'https://placehold.co/600x400'
       }));
-      const { error } = await client.from('cart').insert(rows);
-      if (error) {
-        console.error('❌ Error saving cart:', error.message);
+      
+      // Filter out any rows with empty product_id
+      const validRows = rows.filter(row => row.product_id);
+      
+      if (validRows.length > 0) {
+        const { error } = await client.from('cart').insert(validRows);
+        if (error) {
+          console.error('❌ Error saving cart:', error.message);
+          console.error('Error details:', error);
+        }
       }
     }
   } catch (err) {
     console.error('❌ Error:', err.message);
   }
 }
-
 // --- Wishlist
 async function fetchWishlistFromDB(sessionId) {
   const client = getSupabase();
@@ -728,11 +735,25 @@ async function saveCustomersToDB(customers) {
   if (!client) return;
   
   try {
+    // Delete all existing customers
     await client.from('customer_accounts').delete().neq('id', '');
+    
     if (customers.length > 0) {
-      const { error } = await client.from('customer_accounts').insert(customers);
+      // Map camelCase to match database column names
+      const rows = customers.map(c => ({
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        phone: c.phone || '',
+        address: c.address || '',
+        password: c.password || '',
+        "createdAt": c.createdAt || new Date().toISOString()
+      }));
+      
+      const { error } = await client.from('customer_accounts').insert(rows);
       if (error) {
         console.error('❌ Error saving customers:', error.message);
+        console.error('Error details:', error);
       }
     }
   } catch (err) {

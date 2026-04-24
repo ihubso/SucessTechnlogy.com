@@ -48,23 +48,80 @@ async function saveProducts(prods) {
     console.warn('Supabase save failed, products not persisted.');
   }
 }
+function getUserSessionKey() {
+  const user = getCurrentUser();
+  return user ? `user_${user.id}` : getSessionId();
+}
 
 async function getCart() { 
-  return await fetchCartFromDB(getSessionId()) || []; 
+  const sessionKey = getUserSessionKey();
+  return await fetchCartFromDB(sessionKey) || []; 
 }
 async function saveCart(cart) { 
-  await saveCartToDB(getSessionId(), cart); 
+  const sessionKey = getUserSessionKey();
+  await saveCartToDB(sessionKey, cart); 
   renderCart(); 
 }
 
 async function getWishlist() { 
-  return await fetchWishlistFromDB(getSessionId()) || []; 
+  const sessionKey = getUserSessionKey();
+  return await fetchWishlistFromDB(sessionKey) || []; 
 }
+
 async function saveWishlist(wish) {
-  await saveWishlistToDB(getSessionId(), wish);
+  const sessionKey = getUserSessionKey();
+  await saveWishlistToDB(sessionKey, wish);
   renderWishlistCount();
   updateAllWishlistIcons();
   renderWishlistModal();
+}
+// ===============================================
+//   USER-SPECIFIC CART, WISHLIST & ORDERS
+// ===============================================
+async function mergeGuestDataToUser(userId) {
+  const guestSessionId = getSessionId();
+  const userSessionKey = `user_${userId}`;
+  
+  // Merge cart
+  const guestCart = await fetchCartFromDB(guestSessionId) || [];
+  const userCart = await fetchCartFromDB(userSessionKey) || [];
+  
+  if (guestCart.length > 0) {
+    // Merge carts (add quantities for same products)
+    const mergedCart = [...userCart];
+    guestCart.forEach(guestItem => {
+      const existingIndex = mergedCart.findIndex(item => 
+        item.product_id === guestItem.product_id
+      );
+      if (existingIndex >= 0) {
+        mergedCart[existingIndex].qty += guestItem.qty;
+      } else {
+        mergedCart.push(guestItem);
+      }
+    });
+    
+    await saveCartToDB(userSessionKey, mergedCart.map(item => ({
+      session_id: userSessionKey,
+      product_id: item.product_id,
+      name: item.name,
+      price: item.price,
+      qty: item.qty,
+      image: item.image
+    })));
+    
+    // Clear guest cart
+    await saveCartToDB(guestSessionId, []);
+  }
+  
+  // Merge wishlist
+  const guestWishlist = await fetchWishlistFromDB(guestSessionId) || [];
+  const userWishlist = await fetchWishlistFromDB(userSessionKey) || [];
+  
+  if (guestWishlist.length > 0) {
+    const mergedWishlist = [...new Set([...userWishlist, ...guestWishlist])];
+    await saveWishlistToDB(userSessionKey, mergedWishlist);
+    await saveWishlistToDB(guestSessionId, []);
+  }
 }
 
 async function getReviews() {
@@ -1702,14 +1759,30 @@ async function handleRegister() {
   const accounts = await getAccounts();
   if (accounts.find(a => a.email === email)) { showToast("Email already registered"); return; }
   
-  const newAccount = { id: 'CUST-' + Date.now(), name, email, phone, address, password, createdAt: new Date().toISOString() };
+  const newAccount = { 
+    id: 'CUST-' + Date.now(), 
+    name, email, phone, address, 
+    password, 
+    createdAt: new Date().toISOString() 
+  };
   accounts.push(newAccount);
   await saveAccounts(accounts);
   
-  const loggedInUser = { ...newAccount }; delete loggedInUser.password;
+  const loggedInUser = { ...newAccount }; 
+  delete loggedInUser.password;
+  
+  // Merge guest data
+  await mergeGuestDataToUser(newAccount.id);
+  
   setCurrentUser(loggedInUser);
   closeModal('accountModal');
   showToast(`Welcome, ${name}! 🎉`);
+  
+  // Refresh UI
+  await renderCart();
+  await renderWishlistCount();
+  await renderWishlistModal();
+  updateAllWishlistIcons();
 }
 
 async function handleLogin() {
@@ -1721,20 +1794,41 @@ async function handleLogin() {
   const account = accounts.find(a => a.email === email && a.password === password);
   if (!account) { showToast("Invalid email or password"); return; }
   
-  const loggedInUser = { ...account }; delete loggedInUser.password;
+  const loggedInUser = { ...account }; 
+  delete loggedInUser.password;
+  
+  // Merge guest data before setting user
+  await mergeGuestDataToUser(account.id);
+  
   setCurrentUser(loggedInUser);
   closeModal('accountModal');
   showToast(`Welcome back, ${account.name}! 👋`);
+  
+  // Refresh UI
+  await renderCart();
+  await renderWishlistCount();
+  await renderWishlistModal();
+  updateAllWishlistIcons();
 }
+
 
 function handleLogout() {
   if (confirm('Are you sure you want to logout?')) {
+    // Save current user data before logout
     localStorage.removeItem(CURRENT_USER_KEY);
     updateAccountUI();
     closeAccountDropdown();
+    
+    // Refresh to show guest cart/wishlist
+    renderCart();
+    renderWishlistCount();
+    renderWishlistModal();
+    updateAllWishlistIcons();
+    
     showToast('Logged out successfully');
   }
 }
+
 
 function showRegisterForm() {
   document.getElementById('loginForm').classList.add('hidden');
@@ -1767,11 +1861,14 @@ function closeAccountDropdown() {
 async function viewMyOrders() {
   closeAccountDropdown();
   const user = getCurrentUser();
-  if (!user) { showToast("Please login first"); return; }
+  if (!user) { 
+    showToast("Please login first"); 
+    return; 
+  }
   
   const orders = await getOrders();
   const myOrders = orders.filter(o => {
-    const customerName = (o.customer || '').toLowerCase().trim();
+    const customerName = (o.customer_name || o.customer || '').toLowerCase().trim();
     const userName = (user.name || '').toLowerCase().trim();
     const userPhone = (user.phone || '').replace(/\D/g, '');
     const orderPhone = (o.phone || '').replace(/\D/g, '');
@@ -1781,32 +1878,22 @@ async function viewMyOrders() {
     return nameMatch || phoneMatch || emailMatch;
   });
   
-  if (myOrders.length === 0) {
-    const msgHTML = `
-      <div id="myOrdersModal" class="modal" style="display: flex; align-items: center; justify-content: center;">
-        <div class="bg-white rounded-3xl max-w-md w-full p-8 mx-4 shadow-2xl text-center">
-          <span class="text-5xl mb-4 block">📋</span>
-          <h2 class="text-xl font-bold mb-2">No Orders Found</h2>
-          <p class="text-gray-500 mb-4">You haven't placed any orders yet.</p>
-          <button onclick="document.getElementById('myOrdersModal').remove();" class="bg-primary text-white px-6 py-3 rounded-xl font-medium">Start Shopping</button>
+  const overlayHTML = `
+    <div id="myOrdersOverlay" class="orders-overlay">
+      <div class="orders-overlay-backdrop" onclick="closeMyOrdersOverlay()"></div>
+      <div class="orders-overlay-panel">
+        <div class="orders-overlay-header">
+          <h2>📋 My Orders (${myOrders.length})</h2>
+          <button onclick="closeMyOrdersOverlay()" class="orders-overlay-close">✕</button>
         </div>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', msgHTML);
-    document.getElementById('myOrdersModal').addEventListener('click', (e) => {
-      if (e.target.id === 'myOrdersModal') e.target.remove();
-    });
-    return;
-  }
-  
-  const ordersHTML = `
-    <div id="myOrdersModal" class="modal" style="display: flex; align-items: center; justify-content: center;">
-      <div class="bg-white rounded-3xl max-w-2xl w-full p-6 mx-4 shadow-2xl max-h-[80vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-6">
-          <h2 class="text-2xl font-bold">📋 My Orders (${myOrders.length})</h2>
-          <button onclick="document.getElementById('myOrdersModal').remove()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">✕</button>
-        </div>
-        <div class="space-y-4">
-          ${myOrders.slice(0, 20).map(order => {
+        <div class="orders-overlay-content">
+          ${myOrders.length === 0 ? `
+            <div class="text-center py-12">
+              <span class="text-6xl mb-4 block">📦</span>
+              <h3 class="text-xl font-bold mb-2">No Orders Yet</h3>
+              <p class="text-gray-500">Start shopping to see your orders here!</p>
+            </div>
+          ` : myOrders.slice(0, 20).map(order => {
             const status = order.status || 'pending';
             const statusConfig = {
               pending: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', icon: '🟡' },
@@ -1817,7 +1904,7 @@ async function viewMyOrders() {
             };
             const cfg = statusConfig[status] || statusConfig.pending;
             return `
-              <div class="${cfg.bg} rounded-2xl p-4 border">
+              <div class="${cfg.bg} rounded-2xl p-4 border ${cfg.border}">
                 <div class="flex justify-between items-start mb-2">
                   <div>
                     <span class="font-mono font-bold">${order.id}</span>
@@ -1825,10 +1912,10 @@ async function viewMyOrders() {
                   </div>
                   <span class="font-bold text-lg">FCFA ${order.total.toFixed(2)}</span>
                 </div>
-                <p class="text-xs text-gray-500">📅 ${new Date(order.date).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                <p class="text-xs text-gray-500">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</p>
                 <p class="text-xs text-gray-500">📍 ${order.address}</p>
                 <div class="mt-2 text-sm flex flex-wrap gap-1">
-                  ${order.items.map(i => `<span class="bg-white/50 px-2 py-0.5 rounded-full text-xs">${i.name} x${i.qty}</span>`).join('')}
+                  ${(order.items || []).map(i => `<span class="bg-white/50 px-2 py-0.5 rounded-full text-xs">${i.name} x${i.qty}</span>`).join('')}
                 </div>
                 <a href="track.html?order=${order.id}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-primary text-sm font-medium hover:underline bg-white/50 px-3 py-1 rounded-full">
                   <i class="fas fa-external-link-alt text-xs"></i> Track Order
@@ -1837,11 +1924,86 @@ async function viewMyOrders() {
           }).join('')}
         </div>
       </div>
-    </div>`;
-  document.body.insertAdjacentHTML('beforeend', ordersHTML);
-  document.getElementById('myOrdersModal').addEventListener('click', (e) => {
-    if (e.target.id === 'myOrdersModal') e.target.remove();
-  });
+    </div>
+  `;
+  
+  // Remove existing overlay if any
+  const existing = document.getElementById('myOrdersOverlay');
+  if (existing) existing.remove();
+  
+  document.body.insertAdjacentHTML('beforeend', overlayHTML);
+  document.body.style.overflow = 'hidden';
+}
+window.closeMyOrdersOverlay = function() {
+  const overlay = document.getElementById('myOrdersOverlay');
+  if (overlay) overlay.remove();
+  document.body.style.overflow = '';
+};
+function addOverlayStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .orders-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .orders-overlay-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+    }
+    .orders-overlay-panel {
+      position: relative;
+      background: white;
+      border-radius: 2rem;
+      width: min(90vw, 700px);
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+      animation: slideUp 0.3s ease;
+    }
+    .orders-overlay-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .orders-overlay-header h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+    .orders-overlay-close {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 50%;
+      background: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .orders-overlay-close:hover {
+      background: #e2e8f0;
+    }
+    .orders-overlay-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 function autofillCheckoutFromAccount() {
@@ -1890,6 +2052,7 @@ window.toggleAccountDropdown = function() {
 //               INITIALIZATION (async)
 // ===============================================
 async function init() {
+  addOverlayStyles();
   // Load initial data from Supabase
   GLOBAL_PRODUCTS = await fetchProductsFromDB();
   if (!GLOBAL_PRODUCTS || GLOBAL_PRODUCTS.length === 0) {

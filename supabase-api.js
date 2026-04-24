@@ -536,16 +536,22 @@ async function saveSearchAnalyticsToDB(analytics) {
   if (!client) return;
   
   try {
-    const rows = Object.values(analytics).map(a => ({
-      query: a.query,
-      count: a.count,
-      last_searched: a.lastSearched,
-      results: a.results
-    }));
+    // Instead of deleting all and re-inserting (which causes conflicts),
+    // use upsert to handle each search query individually
+    const entries = Object.values(analytics);
     
-    await client.from('search_analytics').delete().neq('query', '');
-    if (rows.length > 0) {
-      const { error } = await client.from('search_analytics').insert(rows);
+    for (const entry of entries) {
+      const { error } = await client
+        .from('search_analytics')
+        .upsert({
+          query: entry.query,
+          count: entry.count,
+          last_searched: entry.lastSearched,
+          results: entry.results
+        }, {
+          onConflict: 'query'  // If query already exists, update it
+        });
+      
       if (error) {
         console.error('❌ Error saving search analytics:', error.message);
       }
@@ -626,7 +632,7 @@ async function fetchFailedSearchesFromDB() {
     return (data || []).map(row => ({
       query: row.query,
       count: row.count,
-      lastSearched: row.last_searched
+      lastSearched: row.last_searched  // Map snake_case to camelCase
     }));
   } catch (err) {
     console.error('❌ Error:', err.message);
@@ -639,9 +645,18 @@ async function saveFailedSearchesToDB(failed) {
   if (!client) return;
   
   try {
+    // Delete all existing failed searches
     await client.from('failed_searches').delete().neq('query', '');
+    
     if (failed.length > 0) {
-      const { error } = await client.from('failed_searches').insert(failed);
+      // Map camelCase to snake_case for database
+      const rows = failed.map(item => ({
+        query: item.query,
+        count: item.count,
+        last_searched: item.lastSearched  // Map camelCase to snake_case
+      }));
+      
+      const { error } = await client.from('failed_searches').insert(rows);
       if (error) {
         console.error('❌ Error saving failed searches:', error.message);
       }
@@ -650,6 +665,7 @@ async function saveFailedSearchesToDB(failed) {
     console.error('❌ Error:', err.message);
   }
 }
+
 
 // --- Customer Accounts
 async function fetchCustomersFromDB() {

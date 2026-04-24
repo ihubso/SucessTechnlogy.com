@@ -132,7 +132,7 @@
                 class="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
           <i class="fas fa-user text-xl"></i>
         </button>
-        <div id="accountDropdown" class="hidden absolute right-0 top-16 w-72 bg-white rounded-2xl shadow-2xl border z-50 p-4">
+          <div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
           <div class="text-center pb-4 border-b">
             <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
               <i class="fas fa-user text-xl text-primary"></i>
@@ -152,12 +152,8 @@
             </button>
           </div>
           <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
-            <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">
-              Login
-            </button>
-            <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">
-              Register
-            </button>
+            <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">Login</button>
+            <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">Register</button>
           </div>
         </div>
       </div>
@@ -387,31 +383,8 @@
   </div>
 </div>
 
-<!-- Account Menu Dropdown -->
-<div id="accountDropdown" class="hidden fixed sm:absolute right-4 sm:right-0 top-20 sm:top-16 w-[calc(100vw-2rem)] sm:w-72 max-w-sm bg-white rounded-2xl shadow-2xl border z-50 p-4 mx-auto sm:mx-0">
-  <div class="text-center pb-4 border-b">
-    <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
-      <i class="fas fa-user text-xl text-primary"></i>
-    </div>
-    <p id="dropdownUserName" class="font-bold">Guest</p>
-    <p id="dropdownUserEmail" class="text-xs text-gray-500"></p>
-  </div>
-  <div class="py-2 space-y-1">
-    <button onclick="viewMyOrders()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
-      <i class="fas fa-shopping-bag text-gray-400"></i> My Orders
-    </button>
-    <button onclick="openModal('accountModal'); closeAccountDropdown()" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-3 text-sm">
-      <i class="fas fa-cog text-gray-400"></i> Account Settings
-    </button>
-    <button onclick="handleLogout()" id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm hidden">
-      <i class="fas fa-sign-out-alt"></i> Logout
-    </button>
-  </div>
-  <div id="loginRegisterBtns" class="pt-2 border-t mt-2">
-    <button onclick="closeAccountDropdown(); openModal('accountModal'); showLoginForm()" class="w-full bg-primary text-white py-2 rounded-xl text-sm font-medium mb-2">Login</button>
-    <button onclick="closeAccountDropdown(); openModal('accountModal'); showRegisterForm()" class="w-full border border-primary text-primary py-2 rounded-xl text-sm font-medium">Register</button>
-  </div>
-</div>
+
+
 
 
 <!-- Footer -->
@@ -454,5 +427,6 @@
 <script src="supabase-api.js"></script>
 <script src="viewer/prodct.js"></script>
 <script src="viewer/script.js"></script>
+
 </body>
 </html>

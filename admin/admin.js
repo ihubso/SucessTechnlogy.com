@@ -1,36 +1,37 @@
+// admin.js - ShopBoss Admin Panel (Supabase Integration)
 
-  const STORAGE = {
-     PRODUCTS: 'shop_products_v3', 
-    CART: 'shop_cart_v1', 
-    WISHLIST: 'shop_wishlist', 
-    REVIEWS: 'shop_reviews',
-     BUSINESS: 'business_info',
-     CONTACT: 'contact_location_info',
-     FEATURED: 'featured_product_ids',
-     DEALS: 'deals_of_today',
-       ORDERS: 'shop_orders_v1',
-         SEARCH_ANALYTICS: 'shop_search_analytics',
+const STORAGE = {
+  PRODUCTS: 'shop_products_v3',
+  CART: 'shop_cart_v1',
+  WISHLIST: 'shop_wishlist',
+  REVIEWS: 'shop_reviews',
+  BUSINESS: 'business_info',
+  CONTACT: 'contact_location_info',
+  FEATURED: 'featured_product_ids',
+  DEALS: 'deals_of_today',
+  ORDERS: 'shop_orders_v1',
+  SEARCH_ANALYTICS: 'shop_search_analytics',
   VIEW_ANALYTICS: 'shop_view_analytics',
   FAILED_SEARCHES: 'shop_failed_searches'
-     };
-     const ACCOUNT_STORAGE_KEY = 'shop_customer_accounts';
-     let editAddedImages = [];
-     let addedImages = [];
-     let variantsList = []; // For add form
-let editVariantsList = []; // For edit form
+};
 
-  function getStorage(key, def=null) { 
-    const raw = localStorage.getItem(key);
-     return raw ? JSON.parse(raw) : def;
-     }
+const ACCOUNT_STORAGE_KEY = 'shop_customer_accounts';
+let editAddedImages = [];
+let addedImages = [];
+let variantsList = [];
+let editVariantsList = [];
+let GLOBAL_PRODUCTS = [];
 
-  function setStorage(key, val) {
-     localStorage.setItem(key, JSON.stringify(val)
-    );
-   }
-  function genId() {
-     return Date.now() + '-' + Math.random().toString(36).substr(2, 8);
-     }
+// Session ID for cart/wishlist (in production, use a proper session management)
+const SESSION_ID = 'admin_session_' + (localStorage.getItem('admin_session_id') || (() => {
+  const id = Date.now() + '-' + Math.random().toString(36).substr(2, 8);
+  localStorage.setItem('admin_session_id', id);
+  return id;
+})());
+
+function genId() {
+  return Date.now() + '-' + Math.random().toString(36).substr(2, 8);
+}
 
 function normalizeProductImages(products) {
   return products.map(p => ({
@@ -39,114 +40,247 @@ function normalizeProductImages(products) {
   }));
 }
 
-function getProducts() {
-  let p = getStorage(STORAGE.PRODUCTS);
+// ===============================================
+//          SUPABASE-BACKED DATA FUNCTIONS
+// ===============================================
+
+async function getProducts() {
+  // Try Supabase first
+  const cloudProducts = await fetchProductsFromDB();
+  if (cloudProducts && cloudProducts.length > 0) {
+    GLOBAL_PRODUCTS = normalizeProductImages(cloudProducts);
+    return GLOBAL_PRODUCTS;
+  }
+  
+  // Fallback to localStorage
+  let p = JSON.parse(localStorage.getItem(STORAGE.PRODUCTS) || 'null');
   if (!p || p.length === 0) {
     const normalized = normalizeProductImages(DEFAULT_PRODUCTS);
-    setStorage(STORAGE.PRODUCTS, normalized);
+    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(normalized));
     return normalized;
   }
-  // Ensure existing products have images array
   if (p.some(prod => !prod.images)) {
     p = normalizeProductImages(p);
-    setStorage(STORAGE.PRODUCTS, p);
+    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(p));
   }
+  GLOBAL_PRODUCTS = p;
   return p;
 }
 
-  function saveProducts(prods) { 
-    setStorage(STORAGE.PRODUCTS, prods); 
-    refreshAll(); 
+async function saveProducts(prods) {
+  GLOBAL_PRODUCTS = prods;
+  localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+  
+  // Sync to Supabase
+  for (const product of prods) {
+    await addProductToDB(product);
   }
-  function getCart() {
-     return getStorage(STORAGE.CART, []);
-     } 
-     function saveCart(cart) {
-       setStorage(STORAGE.CART, cart); 
-       renderCart();
-       }
-  function getWishlist() {
-     return getStorage(STORAGE.WISHLIST, []);
-     } 
+}
 
-     function saveWishlist(wish) {
-       setStorage(STORAGE.WISHLIST, wish);
-        renderWishlistCount(); 
-        renderAllProducts();
-         renderWishlistModal(); 
-        }
-
-  function getReviews() {
-     return getStorage(STORAGE.REVIEWS, {});
-     } 
-     function saveReviews(rev) { 
-      setStorage(STORAGE.REVIEWS, rev);
-     }
-  function getOrders() {
-     return getStorage(STORAGE.ORDERS, []);
-     }
-     function getBusinessInfo() {
-       return getStorage
-       (STORAGE.BUSINESS, {
-         shopName: "ShopBoss",
-         email: "hello@shopboss.com",
-          phone: "+1234567890",
-           address: "123 Commerce St",
-           facebook: "",
-           instagram: "",
-           tiktok: "" });
-           }
-
-  function getFeaturedIds() {
-     return getStorage(STORAGE.FEATURED, []);
-     } 
-
-  function setFeaturedIds(ids) {
-     setStorage(STORAGE.FEATURED, ids);
-     }
-
-  function getDealsOfToday() {
-    return getStorage(STORAGE.DEALS, []);
+async function addNewProduct(product) {
+  const saved = await addProductToDB(product);
+  if (saved) {
+    GLOBAL_PRODUCTS.unshift(saved);
+    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(GLOBAL_PRODUCTS));
+    renderAllProducts();
+    showToast("✅ Product added");
+  } else {
+    showToast("❌ Failed to save product");
   }
+}
 
-  function setDealsOfToday(deals) {
-    setStorage(STORAGE.DEALS, deals);
+async function getCart() {
+  const cloudCart = await fetchCartFromDB(SESSION_ID);
+  if (cloudCart && cloudCart.length > 0) {
+    return cloudCart.map(item => ({
+      id: item.product_id,
+      name: item.name,
+      price: item.price,
+      qty: item.qty,
+      image: item.image
+    }));
   }
+  return JSON.parse(localStorage.getItem(STORAGE.CART) || '[]');
+}
 
-  function saveDealForProduct(productId, discount) {
-    const cleanDiscount = Number(discount);
-    if (!Number.isFinite(cleanDiscount) || cleanDiscount < 1 || cleanDiscount > 95) {
-      showToast("Discount must be between 1 and 95");
-      return;
-    }
-    const deals = getDealsOfToday().filter(d => d.id !== productId);
-    deals.push({ id: productId, discount: cleanDiscount });
-    setDealsOfToday(deals);
-    showToast("Deal of the day saved");
-    refreshAll();
-  }
+async function saveCart(cart) {
+  localStorage.setItem(STORAGE.CART, JSON.stringify(cart));
+  await saveCartToDB(SESSION_ID, cart);
+  renderCart();
+}
 
-  function removeDealForProduct(productId, silent = false) {
-    const deals = getDealsOfToday().filter(d => d.id !== productId);
-    setDealsOfToday(deals);
-    if (!silent) {
-      showToast("Deal removed");
-      refreshAll();
-    }
+async function getWishlist() {
+  const cloudWishlist = await fetchWishlistFromDB(SESSION_ID);
+  if (cloudWishlist && cloudWishlist.length > 0) {
+    return cloudWishlist;
   }
+  return JSON.parse(localStorage.getItem(STORAGE.WISHLIST) || '[]');
+}
 
-  function toggleFeatured(id) {
-    let ids = getFeaturedIds();
-    if (ids.includes(id)) {
-      ids = ids.filter(i => i !== id);
-      showToast("Removed from Featured");
-    } else {
-      ids.push(id);
-      showToast("Added to Featured");
-    }
-    setFeaturedIds(ids);
-    refreshAll();
+async function saveWishlist(wish) {
+  localStorage.setItem(STORAGE.WISHLIST, JSON.stringify(wish));
+  await saveWishlistToDB(SESSION_ID, wish);
+  renderWishlistCount();
+  renderAllProducts();
+  renderWishlistModal();
+}
+
+async function getReviews() {
+  const cloudReviews = await fetchReviewsFromDB();
+  if (cloudReviews && Object.keys(cloudReviews).length > 0) {
+    return cloudReviews;
   }
+  return JSON.parse(localStorage.getItem(STORAGE.REVIEWS) || '{}');
+}
+
+async function saveReviews(rev) {
+  localStorage.setItem(STORAGE.REVIEWS, JSON.stringify(rev));
+  await saveReviewsToDB(rev);
+}
+
+async function getOrders() {
+  const cloudOrders = await getOrdersFromDB();
+  if (cloudOrders && cloudOrders.length > 0) {
+    return cloudOrders.map(o => ({
+      id: o.id,
+      date: o.created_at,
+      customer: o.customer_name,
+      phone: o.phone,
+      address: o.address,
+      email: o.email || '',
+      items: o.items,
+      total: o.total,
+      status: o.status
+    }));
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.ORDERS) || '[]');
+}
+
+async function saveOrders(orders) {
+  localStorage.setItem(STORAGE.ORDERS, JSON.stringify(orders));
+  // Orders are saved individually through createOrderInDB
+}
+
+async function getBusinessInfo() {
+  const cloudInfo = await fetchBusinessInfoFromDB();
+  if (cloudInfo) {
+    return cloudInfo;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.BUSINESS) || JSON.stringify({
+    shopName: "ShopBoss",
+    email: "hello@shopboss.com",
+    phone: "+1234567890",
+    address: "123 Commerce St",
+    facebook: "",
+    instagram: "",
+    tiktok: ""
+  }));
+}
+
+async function saveBusinessInfo(info) {
+  localStorage.setItem(STORAGE.BUSINESS, JSON.stringify(info));
+  await saveBusinessInfoToDB(info);
+}
+
+async function getFeaturedIds() {
+  const cloudIds = await fetchFeaturedIdsFromDB();
+  if (cloudIds && cloudIds.length > 0) {
+    return cloudIds;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.FEATURED) || '[]');
+}
+
+async function setFeaturedIds(ids) {
+  localStorage.setItem(STORAGE.FEATURED, JSON.stringify(ids));
+  await saveFeaturedIdsToDB(ids);
+}
+
+async function getDealsOfToday() {
+  const cloudDeals = await fetchDealsFromDB();
+  if (cloudDeals && cloudDeals.length > 0) {
+    return cloudDeals.map(d => ({ id: d.product_id, discount: d.discount }));
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.DEALS) || '[]');
+}
+
+async function setDealsOfToday(deals) {
+  localStorage.setItem(STORAGE.DEALS, JSON.stringify(deals));
+  for (const deal of deals) {
+    await saveDealToDB(deal.id, deal.discount);
+  }
+}
+
+async function getSearchAnalytics() {
+  const cloudAnalytics = await fetchSearchAnalyticsFromDB();
+  if (cloudAnalytics && Object.keys(cloudAnalytics).length > 0) {
+    return cloudAnalytics;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.SEARCH_ANALYTICS) || '{}');
+}
+
+async function saveSearchAnalytics(analytics) {
+  localStorage.setItem(STORAGE.SEARCH_ANALYTICS, JSON.stringify(analytics));
+  await saveSearchAnalyticsToDB(analytics);
+}
+
+async function getViewAnalytics() {
+  const cloudAnalytics = await fetchViewAnalyticsFromDB();
+  if (cloudAnalytics && Object.keys(cloudAnalytics).length > 0) {
+    return cloudAnalytics;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.VIEW_ANALYTICS) || '{}');
+}
+
+async function saveViewAnalytics(analytics) {
+  localStorage.setItem(STORAGE.VIEW_ANALYTICS, JSON.stringify(analytics));
+  await saveViewAnalyticsToDB(analytics);
+}
+
+async function getFailedSearches() {
+  const cloudFailed = await fetchFailedSearchesFromDB();
+  if (cloudFailed && cloudFailed.length > 0) {
+    return cloudFailed;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.FAILED_SEARCHES) || '[]');
+}
+
+async function saveFailedSearches(failed) {
+  localStorage.setItem(STORAGE.FAILED_SEARCHES, JSON.stringify(failed));
+  await saveFailedSearchesToDB(failed);
+}
+
+async function getCustomers() {
+  const cloudCustomers = await fetchCustomersFromDB();
+  if (cloudCustomers && cloudCustomers.length > 0) {
+    return cloudCustomers;
+  }
+  return JSON.parse(localStorage.getItem(ACCOUNT_STORAGE_KEY) || '[]');
+}
+
+async function saveCustomers(customers) {
+  localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(customers));
+  await saveCustomersToDB(customers);
+}
+
+async function getContactInfo() {
+  const cloudInfo = await fetchContactInfoFromDB();
+  if (cloudInfo) {
+    return cloudInfo;
+  }
+  return JSON.parse(localStorage.getItem(STORAGE.CONTACT) || JSON.stringify({
+    latitude: 40.7128,
+    longitude: -74.0060,
+    hours: "Mon - Fri: 9:00 AM - 6:00 PM\nSat: 10:00 AM - 4:00 PM\nSun: Closed",
+    description: "",
+    shopPhoto: ""
+  }));
+}
+
+async function saveContactInfo(info) {
+  localStorage.setItem(STORAGE.CONTACT, JSON.stringify(info));
+  await saveContactInfoToDB(info);
+}
+
 // ===============================================
 //               REVIEWS MANAGEMENT
 // ===============================================
@@ -154,14 +288,13 @@ function getProducts() {
 let reviewFilterProduct = 'all';
 let reviewFilterRating = 'all';
 
-function renderReviewsList() {
+async function renderReviewsList() {
   const container = document.getElementById('reviewsListContainer');
   if (!container) return;
 
-  const reviews = getReviews();
-  const products = getProducts();
+  const reviews = await getReviews();
+  const products = await getProducts();
   
-  // Flatten reviews into array with product info
   let allReviews = [];
   Object.entries(reviews).forEach(([productId, productReviews]) => {
     const product = products.find(p => p.id === productId);
@@ -177,7 +310,6 @@ function renderReviewsList() {
     });
   });
 
-  // Apply filters
   if (reviewFilterProduct !== 'all') {
     allReviews = allReviews.filter(r => r.productId === reviewFilterProduct);
   }
@@ -185,7 +317,6 @@ function renderReviewsList() {
     allReviews = allReviews.filter(r => r.rating === parseInt(reviewFilterRating));
   }
 
-  // Sort by date (newest first)
   allReviews.sort((a, b) => (b.id || 0) - (a.id || 0));
 
   if (allReviews.length === 0) {
@@ -214,23 +345,22 @@ function renderReviewsList() {
     </div>
   `).join('');
 
-  // Attach delete handlers
   document.querySelectorAll('.delete-review-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const reviewId = parseInt(btn.dataset.reviewId);
       const productId = btn.dataset.productId;
-      deleteReview(productId, reviewId);
+      await deleteReview(productId, reviewId);
     });
   });
 }
 
-function deleteReview(productId, reviewId) {
+async function deleteReview(productId, reviewId) {
   if (!confirm('Delete this review?')) return;
   
-  const reviews = getReviews();
+  const reviews = await getReviews();
   if (reviews[productId]) {
     reviews[productId] = reviews[productId].filter(r => r.id !== reviewId);
-    saveReviews(reviews);
+    await saveReviews(reviews);
     showToast('Review deleted');
     renderReviewsList();
   }
@@ -240,12 +370,12 @@ function populateReviewFilters() {
   const productSelect = document.getElementById('reviewFilterProduct');
   if (!productSelect) return;
 
-  const products = getProducts();
-  productSelect.innerHTML = '<option value="all">All Products</option>' +
-    products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  getProducts().then(products => {
+    productSelect.innerHTML = '<option value="all">All Products</option>' +
+      products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  });
 }
 
-// Attach filter listeners
 function initReviewsFilters() {
   document.getElementById('applyReviewFilter')?.addEventListener('click', () => {
     reviewFilterProduct = document.getElementById('reviewFilterProduct')?.value || 'all';
@@ -253,67 +383,93 @@ function initReviewsFilters() {
     renderReviewsList();
   });
 }
-  function showToast(msg) { 
-    let t = document.getElementById('toastMsg'); t.textContent = msg; t.style.opacity = '1'; 
-    setTimeout(() => t.style.opacity = '0', 2500);
-  
-  }
-  window.openModal = (id) => document.getElementById(id)?.classList.remove('hidden');
-  window.closeModal = (id) => document.getElementById(id)?.classList.add('hidden');
 
-  // Wishlist
-  function toggleWishlist(pid) { 
-    let w = getWishlist(); if(w.includes(pid)) w = w.filter(id=>id!==pid);
-     else w.push(pid); 
-     saveWishlist(w); showToast(w.includes(pid)?"Added to wishlist":"Removed"); 
-     renderAllProducts();
-      renderWishlistModal();
-     }
-  function renderWishlistCount() { 
-    document.getElementById('wishlistCount').
-    innerText = getWishlist().length;
-   }
-  function renderWishlistModal() { 
-    let wishIds = getWishlist();
-     let products = getProducts(); 
-     let items = products.filter(p=>wishIds.includes(p.id)); 
-     document.getElementById('wishlistItems').innerHTML =
-      items.length ? `<div class="grid gap-3">${items.map(p=>
-        `<div class="flex gap-4 border-b pb-3"><img src="${p.image}" class="w-16 h-16 object-cover rounded"><div>
-        <h3 class="font-bold">${p.name}</h3>
-        <p>FCFA${p.price}</p>
-        <button onclick="openProductDetail('${p.id}');closeModal('wishlistModal')" class="text-primary text-sm">View</button> 
-        <button onclick="toggleWishlist('${p.id}')" class="text-red-500 text-sm">Remove</button>
-        </div>
-        </div>`).join('')}</div>` : '<p class="text-center">Empty wishlist</p>';
-       }
+function showToast(msg) { 
+  let t = document.getElementById('toastMsg'); 
+  t.textContent = msg; 
+  t.style.opacity = '1'; 
+  setTimeout(() => t.style.opacity = '0', 2500);
+}
 
-  // Reviews
-  function getProductReviews(pid) { return getReviews()[pid] || []; }
+window.openModal = (id) => document.getElementById(id)?.classList.remove('hidden');
+window.closeModal = (id) => document.getElementById(id)?.classList.add('hidden');
 
-  function getAverageRating(pid) { 
-    let revs = getProductReviews(pid); if(!revs.length) return 0; 
-    let sum = revs.reduce((s,r)=>s+r.rating,0); return sum/revs.length;
-   }
-  function renderStars(rating) {
-     let full = Math.floor(rating);
-      let stars = ''; for(let i=0;i<full;i++) stars+='★';
-       for(let i=stars.length;i<5;i++) stars+='☆'; return stars;
-       }
-  function addReview(pid, userName, rating, comment) 
-  { if(!userName) return showToast("Enter name");
-     let reviews = getReviews(); if(!reviews[pid]) reviews[pid]=[]; reviews[pid].push({ id:Date.now(), user:userName, rating:parseInt(rating),
-       comment, date:new Date().toLocaleDateString() }); saveReviews(reviews); 
-       if(window.currentModalProductId === pid) 
-        renderProductDetailModal(pid); 
-      renderAllProducts(); 
-      showToast("Review added");
-     }
+// Wishlist
+async function toggleWishlist(pid) { 
+  let w = await getWishlist(); 
+  if(w.includes(pid)) w = w.filter(id=>id!==pid);
+  else w.push(pid); 
+  await saveWishlist(w); 
+  showToast(w.includes(pid)?"Added to wishlist":"Removed"); 
+  renderAllProducts();
+  renderWishlistModal();
+}
 
-  // Product Grid Logic
-  let currentPage = 1, itemsPerPage = 6, currentSort = "name_asc", currentCategory = "all", currentSearch = "";
+function renderWishlistCount() { 
+  getWishlist().then(w => {
+    document.getElementById('wishlistCount').innerText = w.length;
+  });
+}
+
+async function renderWishlistModal() { 
+  let wishIds = await getWishlist();
+  let products = await getProducts(); 
+  let items = products.filter(p=>wishIds.includes(p.id)); 
+  document.getElementById('wishlistItems').innerHTML =
+    items.length ? `<div class="grid gap-3">${items.map(p=>
+      `<div class="flex gap-4 border-b pb-3"><img src="${p.image}" class="w-16 h-16 object-cover rounded"><div>
+      <h3 class="font-bold">${p.name}</h3>
+      <p>FCFA${p.price}</p>
+      <button onclick="openProductDetail('${p.id}');closeModal('wishlistModal')" class="text-primary text-sm">View</button> 
+      <button onclick="toggleWishlist('${p.id}')" class="text-red-500 text-sm">Remove</button>
+      </div>
+      </div>`).join('')}</div>` : '<p class="text-center">Empty wishlist</p>';
+}
+
+// Reviews
+async function getProductReviews(pid) { 
+  const reviews = await getReviews();
+  return reviews[pid] || []; 
+}
+
+async function getAverageRating(pid) { 
+  let revs = await getProductReviews(pid); 
+  if(!revs.length) return 0; 
+  let sum = revs.reduce((s,r)=>s+r.rating,0); 
+  return sum/revs.length;
+}
+
+function renderStars(rating) {
+  let full = Math.floor(rating);
+  let stars = ''; 
+  for(let i=0;i<full;i++) stars+='★';
+  for(let i=stars.length;i<5;i++) stars+='☆'; 
+  return stars;
+}
+
+async function addReview(pid, userName, rating, comment) { 
+  if(!userName) return showToast("Enter name");
+  let reviews = await getReviews(); 
+  if(!reviews[pid]) reviews[pid]=[]; 
+  reviews[pid].push({ 
+    id:Date.now(), 
+    user:userName, 
+    rating:parseInt(rating),
+    comment, 
+    date:new Date().toLocaleDateString() 
+  }); 
+  await saveReviews(reviews); 
+  if(window.currentModalProductId === pid) 
+    renderProductDetailModal(pid); 
+  renderAllProducts(); 
+  showToast("Review added");
+}
+
+// Product Grid Logic
+let currentPage = 1, itemsPerPage = 6, currentSort = "name_asc", currentCategory = "all", currentSearch = "";
 let adminProductSearch = "";
 const ADMIN_SEARCH_SUGGESTION_LIMIT = 8;
+
 // ===============================================
 //               Helper Functions
 // ===============================================
@@ -332,10 +488,10 @@ function getSortedProducts(products) {
   return sorted;
 }
 
-function renderProductCard(p) {
-  let wished = getWishlist().includes(p.id);
-  let avg = getAverageRating(p.id);
-  let revCount = getProductReviews(p.id).length;
+async function renderProductCard(p) {
+  let wished = (await getWishlist()).includes(p.id);
+  let avg = await getAverageRating(p.id);
+  let revCount = (await getProductReviews(p.id)).length;
 
   return `
     <div class="product-card relative p-4 shadow-sm" data-product-id="${p.id}">
@@ -350,33 +506,57 @@ function renderProductCard(p) {
     </div>
   `;
 }
-// Add this function near the top of admin.js, after your existing helper functions
 
 function compressImage(base64String, maxWidth = 800, quality = 0.7) {
   return new Promise((resolve, reject) => {
+    // Skip compression for remote URLs to avoid CORS issues
+    if (!base64String.startsWith('data:')) {
+      console.log('ℹ️ Remote image detected, skipping compression');
+      resolve(base64String);
+      return;
+    }
+    
     const img = new Image();
+    
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      
-      // Scale down if image is too large
-      if (width > maxWidth) {
-        height = (maxWidth / width) * height;
-        width = maxWidth;
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // Don't scale up small images
+        if (width > maxWidth) {
+          height = (maxWidth / width) * height;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        
+        // Only return compressed version if it's actually smaller
+        if (compressedBase64.length < base64String.length) {
+          console.log(`🗜️ Image compressed: ${(base64String.length / 1024).toFixed(1)}KB → ${(compressedBase64.length / 1024).toFixed(1)}KB`);
+          resolve(compressedBase64);
+        } else {
+          console.log('ℹ️ Compressed image larger than original, using original');
+          resolve(base64String);
+        }
+      } catch (error) {
+        console.warn('⚠️ Compression failed:', error.message);
+        resolve(base64String); // Return original on error
       }
-      
-      canvas.width = width;
-      canvas.height = height;
-      
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      // Convert to compressed base64
-      const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-      resolve(compressedBase64);
     };
-    img.onerror = reject;
+    
+    img.onerror = () => {
+      console.warn('⚠️ Failed to load image for compression, using original');
+      resolve(base64String);
+    };
+    
     img.src = base64String;
   });
 }
@@ -385,7 +565,13 @@ async function processImagesForUpload(imageArray) {
   const processedImages = [];
   for (const img of imageArray) {
     try {
-      // Compress the image before uploading
+      // Skip processing for remote URLs that might cause CORS issues
+      if (img && (img.startsWith('http://') || img.startsWith('https://'))) {
+        console.log('ℹ️ Remote image, skipping upload processing');
+        processedImages.push(img);
+        continue;
+      }
+      
       const compressed = await compressImage(img, 800, 0.7);
       processedImages.push(compressed);
     } catch (e) {
@@ -399,8 +585,8 @@ async function processImagesForUpload(imageArray) {
 //             Main Rendering Functions
 // ===============================================
 
-function renderAllProducts() {
-  let products = getProducts();
+async function renderAllProducts() {
+  let products = await getProducts();
 
   if (currentSearch) {
     products = products.filter(p =>
@@ -419,8 +605,9 @@ function renderAllProducts() {
   let paginated = sorted.slice(start, start + itemsPerPage);
 
   const grid = document.getElementById('productsGrid');
-  grid.innerHTML = paginated.length
-    ? paginated.map(renderProductCard).join('')
+  const cardsHtml = await Promise.all(paginated.map(p => renderProductCard(p)));
+  grid.innerHTML = cardsHtml.length
+    ? cardsHtml.join('')
     : '<div class="col-span-full text-center">No products</div>';
 
   attachCardEvents();
@@ -455,7 +642,6 @@ document.getElementById('multiImageUpload')?.addEventListener('change', async (e
   for (const file of files) {
     try {
       const base64 = await fileToBase64(file);
-      // Compress the image
       const compressed = await compressImage(base64, 800, 0.7);
       addedImages.push(compressed);
     } catch (err) {
@@ -465,7 +651,7 @@ document.getElementById('multiImageUpload')?.addEventListener('change', async (e
   }
   
   updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
-  e.target.value = ''; // Allow re-upload
+  e.target.value = '';
 });
 
 document.getElementById('editMultiImageUpload')?.addEventListener('change', async (e) => {
@@ -474,7 +660,6 @@ document.getElementById('editMultiImageUpload')?.addEventListener('change', asyn
   for (const file of files) {
     try {
       const base64 = await fileToBase64(file);
-      // Compress the image
       const compressed = await compressImage(base64, 800, 0.7);
       editAddedImages.push(compressed);
     } catch (err) {
@@ -487,7 +672,6 @@ document.getElementById('editMultiImageUpload')?.addEventListener('change', asyn
   e.target.value = '';
 });
 
-// Helper to convert File to base64
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -496,23 +680,26 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
-function renderHotProducts() {
-  let p = getProducts().filter(p => p.isHot);
+
+async function renderHotProducts() {
+  let p = (await getProducts()).filter(p => p.isHot);
+  const cardsHtml = await Promise.all(p.map(pr => renderProductCard(pr)));
   document.getElementById('hotProductsGrid').innerHTML =
-    p.map(renderProductCard).join('') || '<p>No hot products</p>';
+    cardsHtml.join('') || '<p>No hot products</p>';
   attachCardEvents();
 }
 
-function renderNewProducts() {
-  let p = getProducts().filter(p => p.isNew);
+async function renderNewProducts() {
+  let p = (await getProducts()).filter(p => p.isNew);
+  const cardsHtml = await Promise.all(p.map(pr => renderProductCard(pr)));
   document.getElementById('newProductsGrid').innerHTML =
-    p.map(renderProductCard).join('') || '<p>No new products</p>';
+    cardsHtml.join('') || '<p>No new products</p>';
   attachCardEvents();
 }
 
-function renderFeaturedProduct() {
-  let ids = getFeaturedIds();
-  let allProducts = getProducts();
+async function renderFeaturedProduct() {
+  let ids = await getFeaturedIds();
+  let allProducts = await getProducts();
   let featuredItems = allProducts.filter(p => ids.includes(p.id));
   let container = document.getElementById('featuredProductContainer');
 
@@ -582,15 +769,15 @@ function wishClick(e) {
 //                   Cart Logic
 // ===============================================
 
-window.addToCart = function (id) {
-  let products = getProducts();
+window.addToCart = async function (id) {
+  let products = await getProducts();
   let p = products.find(p => p.id === id);
   if (!p || p.stock <= 0) {
     showToast("Out of stock");
     return;
   }
 
-  let cart = getCart();
+  let cart = await getCart();
   let existing = cart.find(i => i.id === id);
 
   if (existing) {
@@ -609,12 +796,12 @@ window.addToCart = function (id) {
     });
   }
 
-  saveCart(cart);
+  await saveCart(cart);
   showToast(`${p.name} added`);
 };
 
-function renderCart() {
-  let cart = getCart();
+async function renderCart() {
+  let cart = await getCart();
   document.getElementById('cartCount').innerText = cart.reduce((s, i) => s + i.qty, 0);
 
   let container = document.getElementById('cartItems');
@@ -649,19 +836,19 @@ function renderCart() {
     (btn.onclick = () => updateQty(btn.dataset.id, 1))
   );
   document.querySelectorAll('.remove-item').forEach(btn =>
-    (btn.onclick = () => {
-      let cart = getCart().filter(i => i.id !== btn.dataset.id);
-      saveCart(cart);
+    (btn.onclick = async () => {
+      let cart = (await getCart()).filter(i => i.id !== btn.dataset.id);
+      await saveCart(cart);
     })
   );
 }
 
-function updateQty(id, delta) {
-  let cart = getCart();
+async function updateQty(id, delta) {
+  let cart = await getCart();
   let idx = cart.findIndex(i => i.id === id);
   if (idx === -1) return;
 
-  let prod = getProducts().find(p => p.id === id);
+  let prod = (await getProducts()).find(p => p.id === id);
   let newQ = cart[idx].qty + delta;
 
   if (newQ <= 0) {
@@ -673,11 +860,11 @@ function updateQty(id, delta) {
     cart[idx].qty = newQ;
   }
 
-  saveCart(cart);
+  await saveCart(cart);
 }
 
-window.clearCart = function () {
-  saveCart([]);
+window.clearCart = async function () {
+  await saveCart([]);
   showToast("Cart cleared");
 };
 
@@ -687,35 +874,34 @@ window.clearCart = function () {
 
 window.currentModalProductId = null;
 
-function openProductDetail(id) {
+async function openProductDetail(id) {
   window.currentModalProductId = id;
-   trackProductView(id);
-  renderProductDetailModal(id);
+  await trackProductView(id);
+  await renderProductDetailModal(id);
   openModal('productModal');
 }
 
-function renderProductDetailModal(id) {
-  const p = getProducts().find(pr => pr.id === id);
+async function renderProductDetailModal(id) {
+  const p = (await getProducts()).find(pr => pr.id === id);
   if (!p) return;
 
-  const avgRating = getAverageRating(id);
-  const reviews = getProductReviews(id);
-  const isWished = getWishlist().includes(id);
+  const avgRating = await getAverageRating(id);
+  const reviews = await getProductReviews(id);
+  const isWished = (await getWishlist()).includes(id);
   const shareUrl = `${window.location.origin}${window.location.pathname}?product=${id}`;
 
-  const related = getProducts()
+  const allProducts = await getProducts();
+  const related = allProducts
     .filter(prod => prod.id !== id && (prod.category === p.category || prod.brand === p.brand))
     .slice(0, 4);
 
-let allImages = [p.image]; 
+  let allImages = [p.image]; 
   
-  // 2. Add the other images from the array (if they aren't the same as the main one)
   if (p.images && Array.isArray(p.images)) {
     const extraImages = p.images.filter(img => img !== p.image);
     allImages = [...allImages, ...extraImages];
   }
 
-  // 3. Generate the thumbnails HTML
   let galleryHtml = '';
   if (allImages.length > 1) {
     galleryHtml = `
@@ -737,7 +923,6 @@ let allImages = [p.image];
   
   modalInner.innerHTML = `
     <div class="flex flex-col lg:flex-row gap-10 p-2">
-      <!-- LEFT: Sticky Image Gallery -->
       <div class="lg:w-1/2">
         <div class="sticky top-10">
           <div class="bg-white rounded-[2.5rem] overflow-hidden aspect-square flex items-center justify-center border border-gray-100 shadow-sm relative">
@@ -751,7 +936,6 @@ let allImages = [p.image];
         </div>
       </div>
 
-      <!-- RIGHT: Product Info -->
       <div class="lg:w-1/2 flex flex-col">
         <div class="flex justify-between items-start mb-2">
           <div>
@@ -771,7 +955,6 @@ let allImages = [p.image];
 
         <div class="text-4xl font-light text-gray-900 mb-6">FCFA${p.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
 
-        <!-- Specifications Card -->
         <div class="bg-gray-50 rounded-2xl p-5 mb-8 border border-gray-100">
           <h4 class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wider">Specifications</h4>
           <div class="grid grid-cols-2 gap-y-4 gap-x-6">
@@ -781,7 +964,7 @@ let allImages = [p.image];
             <div class="col-span-2"><p class="text-xs text-gray-500">Details</p><p class="text-sm">${p.specs || 'No specific details provided.'}</p></div>
           </div>
         </div>
-                ${p.variants && p.variants.length ? `
+        ${p.variants && p.variants.length ? `
         <div class="mb-6 space-y-4">
           ${p.variants.map(v => `
             <div>
@@ -796,7 +979,6 @@ let allImages = [p.image];
         </div>
         ` : ''}
 
-        <!-- Action Buttons -->
         <div class="flex flex-col sm:flex-row gap-4 mb-8">
           <button onclick="addToCart('${p.id}');" class="flex-[2] bg-black text-white py-4 rounded-xl font-bold hover:bg-gray-800 transition-all transform active:scale-95 shadow-xl shadow-gray-200">
             Add to Bag
@@ -810,7 +992,6 @@ let allImages = [p.image];
       </div>
     </div>
 
-    <!-- Related Products Section -->
     <div class="mt-16 pt-10 border-t border-gray-100">
       <h3 class="text-2xl font-bold mb-8 text-center">Complete the Look</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -826,18 +1007,18 @@ let allImages = [p.image];
       </div>
     </div>
   `;
-}
-document.querySelectorAll('.variant-option').forEach(btn => {
-  btn.addEventListener('click', function() {
-    const type = this.dataset.variantType;
-    const parent = this.closest('div').previousElementSibling;
-    this.parentElement.querySelectorAll('.variant-option').forEach(b => b.classList.remove('bg-primary', 'text-white', 'border-primary'));
-    this.classList.add('bg-primary', 'text-white', 'border-primary');
-    // Optionally store selected variant in a global object
-    window.selectedVariants = window.selectedVariants || {};
-    window.selectedVariants[type] = this.dataset.variantValue;
+
+  // Attach variant option listeners
+  document.querySelectorAll('.variant-option').forEach(btn => {
+    btn.addEventListener('click', function() {
+      this.parentElement.querySelectorAll('.variant-option').forEach(b => b.classList.remove('bg-primary', 'text-white', 'border-primary'));
+      this.classList.add('bg-primary', 'text-white', 'border-primary');
+      window.selectedVariants = window.selectedVariants || {};
+      window.selectedVariants[this.dataset.variantType] = this.dataset.variantValue;
+    });
   });
-});
+}
+
 window.buyNow = function (id) {
   addToCart(id);
   openCheckout();
@@ -859,11 +1040,12 @@ function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
   showToast("Link copied!");
 }
+
 // ===============================================
 //           ANALYTICS RENDERING
 // ===============================================
 
-function renderAnalyticsDashboard() {
+async function renderAnalyticsDashboard() {
   renderTopSearches();
   renderTopViewed();
   renderFailedSearches();
@@ -871,10 +1053,10 @@ function renderAnalyticsDashboard() {
   renderAnalyticsStats();
 }
 
-function renderAnalyticsStats() {
-  const searchAnalytics = getSearchAnalytics();
-  const viewAnalytics = getViewAnalytics();
-  const failedSearches = getFailedSearches();
+async function renderAnalyticsStats() {
+  const searchAnalytics = await getSearchAnalytics();
+  const viewAnalytics = await getViewAnalytics();
+  const failedSearches = await getFailedSearches();
   
   const totalSearches = Object.values(searchAnalytics).reduce((sum, s) => sum + s.count, 0);
   const totalViews = Object.values(viewAnalytics).reduce((sum, v) => sum + v.count, 0);
@@ -884,11 +1066,11 @@ function renderAnalyticsStats() {
   document.getElementById('failedSearchesStat').textContent = failedSearches.length;
 }
 
-function renderTopSearches() {
+async function renderTopSearches() {
   const container = document.getElementById('topSearchesList');
   if (!container) return;
   
-  const analytics = getSearchAnalytics();
+  const analytics = await getSearchAnalytics();
   const sorted = Object.values(analytics)
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
@@ -923,12 +1105,12 @@ function renderTopSearches() {
   }).join('');
 }
 
-function renderTopViewed() {
+async function renderTopViewed() {
   const container = document.getElementById('topViewedList');
   if (!container) return;
   
-  const analytics = getViewAnalytics();
-  const products = getProducts();
+  const analytics = await getViewAnalytics();
+  const products = await getProducts();
   
   const sorted = Object.entries(analytics)
     .map(([id, data]) => {
@@ -967,11 +1149,11 @@ function renderTopViewed() {
   `).join('');
 }
 
-function renderFailedSearches() {
+async function renderFailedSearches() {
   const container = document.getElementById('failedSearchesList');
   if (!container) return;
   
-  const failedSearches = getFailedSearches();
+  const failedSearches = await getFailedSearches();
   const sorted = failedSearches.sort((a, b) => b.count - a.count).slice(0, 10);
   
   if (!sorted.length) {
@@ -996,11 +1178,11 @@ function renderFailedSearches() {
   `).join('');
 }
 
-function renderRecentSearches() {
+async function renderRecentSearches() {
   const container = document.getElementById('recentSearchesList');
   if (!container) return;
   
-  const analytics = getSearchAnalytics();
+  const analytics = await getSearchAnalytics();
   const sorted = Object.values(analytics)
     .sort((a, b) => new Date(b.lastSearched) - new Date(a.lastSearched))
     .slice(0, 10);
@@ -1035,23 +1217,23 @@ function timeAgo(dateString) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function clearSearchAnalytics() {
+async function clearSearchAnalytics() {
   if (!confirm('Clear all search data?')) return;
-  localStorage.removeItem(STORAGE.SEARCH_ANALYTICS);
-  localStorage.removeItem(STORAGE.FAILED_SEARCHES);
+  await saveSearchAnalytics({});
+  await saveFailedSearches([]);
   showToast('Search analytics cleared');
   renderAnalyticsDashboard();
 }
 
-function clearViewAnalytics() {
+async function clearViewAnalytics() {
   if (!confirm('Clear all view data?')) return;
-  localStorage.removeItem(STORAGE.VIEW_ANALYTICS);
+  await saveViewAnalytics({});
   showToast('View analytics cleared');
   renderAnalyticsDashboard();
 }
 
 // Quick add product from failed search
-window.addQuickProduct = function(productName) {
+window.addQuickProduct = async function(productName) {
   if (!confirm(`Create a product named "${productName}"?`)) return;
   
   const newProduct = {
@@ -1073,18 +1255,20 @@ window.addQuickProduct = function(productName) {
     deliveryEstimate: '3-5 business days'
   };
   
-  const products = getProducts();
+  const products = await getProducts();
   products.unshift(newProduct);
-  saveProducts(products);
+  await saveProducts(products);
   showToast('Product added');
   refreshAll();
 };
+
 // ===============================================
 //               Checkout & Orders
 // ===============================================
 
-function openCheckout() {
-  if (getCart().length === 0) {
+async function openCheckout() {
+  const cart = await getCart();
+  if (cart.length === 0) {
     showToast("Cart empty");
     return;
   }
@@ -1092,14 +1276,14 @@ function openCheckout() {
   openModal('checkoutModal');
 }
 
-function checkoutWhatsApp() {
-  let cart = getCart();
+async function checkoutWhatsApp() {
+  let cart = await getCart();
   if (!cart.length) {
     showToast("Cart empty");
     return;
   }
 
-  let info = getBusinessInfo();
+  let info = await getBusinessInfo();
   let phone = info.phone.replace(/\D/g, '') || "1234567890";
   let msg = "🛍️ *New Order*%0A";
   cart.forEach(i => {
@@ -1110,7 +1294,7 @@ function checkoutWhatsApp() {
   window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
 }
 
-document.getElementById('checkoutForm').addEventListener('submit', (e) => {
+document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
   let name = document.getElementById('custName').value.trim();
@@ -1122,10 +1306,10 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     return;
   }
 
-  let cart = getCart();
+  let cart = await getCart();
   if (cart.length === 0) return;
 
-  let products = getProducts();
+  let products = await getProducts();
   for (let item of cart) {
     let p = products.find(pr => pr.id === item.id);
     if (!p || p.stock < item.qty) {
@@ -1138,7 +1322,7 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     let idx = products.findIndex(p => p.id === item.id);
     if (idx !== -1) products[idx].stock -= item.qty;
   }
-  saveProducts(products);
+  await saveProducts(products);
 
   let total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   let order = {
@@ -1156,10 +1340,14 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     total
   };
 
-  let orders = getOrders();
+  // Save to Supabase
+  await createOrderInDB(order);
+
+  let orders = await getOrders();
   orders.unshift(order);
-  setStorage(STORAGE.ORDERS, orders);
-  saveCart([]);
+  localStorage.setItem(STORAGE.ORDERS, JSON.stringify(orders));
+  
+  await saveCart([]);
   closeModal('checkoutModal');
   showToast(`✅ Order placed #${order.id}`);
   refreshAll();
@@ -1169,9 +1357,9 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
 //                Admin Functions
 // ===============================================
 
-function renderAnalytics() {
-  let products = getProducts();
-  let orders = getOrders();
+async function renderAnalytics() {
+  let products = await getProducts();
+  let orders = await getOrders();
 
   document.getElementById('totalProductsStat').innerText = products.length;
   document.getElementById('totalOrdersStat').innerText = orders.length;
@@ -1193,73 +1381,73 @@ function renderAnalytics() {
     : '<div>No orders yet</div>';
 }
 
-function renderProductListAdmin() {
-  let products = getProducts();
+async function renderProductListAdmin() {
+  let products = await getProducts();
   if (adminProductSearch.trim()) {
     const q = adminProductSearch.trim().toLowerCase();
     products = products.filter(p => (p.name || '').toLowerCase().includes(q));
   }
-  const dealsMap = new Map(getDealsOfToday().map(d => [d.id, d.discount]));
+  const dealsMap = new Map((await getDealsOfToday()).map(d => [d.id, d.discount]));
+  
   if (!products.length) {
     document.getElementById('productsList').innerHTML = '<p class="col-span-full text-center text-slate-500 py-6">No products found</p>';
     return;
   }
 
- // In renderProductListAdmin function, update the product card display:
-document.getElementById('productsList').innerHTML = products.map(p => {
-  const dealDiscount = dealsMap.get(p.id);
-  const hasDeal = dealDiscount !== undefined;
-  
-  return `
-    <div class="border rounded-2xl p-4 shadow-sm ${hasDeal ? 'border-primary border-2' : ''}">
-      ${hasDeal ? '<div class="absolute -top-2 -right-2 bg-primary text-white px-2 py-1 rounded-full text-xs font-bold z-10">🔥 DEAL</div>' : ''}
-      <img
-        src="${p.image || 'https://placehold.co/600x400'}"
-        alt="${p.name}"
-        class="product-image-edit-trigger w-full h-40 object-cover rounded-xl mb-3 bg-slate-100 cursor-pointer"
-        data-id="${p.id}"
-        title="Click image to edit"
-        loading="lazy"
-      />
-      <div class="flex items-start justify-between gap-3">
-        <div class="pr-2">
-          <strong class="block">${p.name}</strong>
-          <span class="text-sm text-slate-600">
-            ${hasDeal ? 
-              `<span class="line-through text-gray-400">FCFA${p.price}</span> 
-               <span class="text-primary font-bold">FCFA${(p.price * (1 - dealDiscount/100)).toFixed(2)}</span>
-               <span class="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-1">-${dealDiscount}%</span>` : 
-              `FCFA${p.price}`
-            } · stock: ${p.stock} ${p.isHot ? '🔥' : ''} ${p.isNew ? '✨' : ''}
-          </span>
-        </div>
-        <div class="shrink-0">
-          <button class="edit-product-btn text-blue-600 mr-2" data-id="${p.id}">✏️ Edit</button>
-          <button class="delete-product-btn text-red-500" data-id="${p.id}">Delete</button>
-        </div>
-      </div>
-      <div class="mt-2 flex items-center gap-2 flex-wrap">
-        <span class="text-xs text-slate-500">Deal of Today</span>
-        <input
-          type="number"
-          min="1"
-          max="95"
-          value="${dealDiscount || ''}"
-          placeholder="% off"
-          class="deal-discount-input border rounded px-2 py-1 text-sm w-24"
+  document.getElementById('productsList').innerHTML = products.map(p => {
+    const dealDiscount = dealsMap.get(p.id);
+    const hasDeal = dealDiscount !== undefined;
+    
+    return `
+      <div class="border rounded-2xl p-4 shadow-sm relative ${hasDeal ? 'border-primary border-2' : ''}">
+        ${hasDeal ? '<div class="absolute -top-2 -right-2 bg-primary text-white px-2 py-1 rounded-full text-xs font-bold z-10">🔥 DEAL</div>' : ''}
+        <img
+          src="${p.image || 'https://placehold.co/600x400'}"
+          alt="${p.name}"
+          class="product-image-edit-trigger w-full h-40 object-cover rounded-xl mb-3 bg-slate-100 cursor-pointer"
           data-id="${p.id}"
+          title="Click image to edit"
+          loading="lazy"
         />
-        <button class="set-deal-btn text-xs bg-primary text-white px-3 py-1 rounded-full" data-id="${p.id}">
-          Save Deal
-        </button>
-        ${hasDeal
-          ? `<button class="remove-deal-btn text-xs bg-slate-200 px-3 py-1 rounded-full" data-id="${p.id}">Remove Deal</button>`
-          : ''
-        }
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <strong class="block">${p.name}</strong>
+            <span class="text-sm text-slate-600">
+              ${hasDeal ? 
+                `<span class="line-through text-gray-400">FCFA${p.price}</span> 
+                 <span class="text-primary font-bold">FCFA${(p.price * (1 - dealDiscount/100)).toFixed(2)}</span>
+                 <span class="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-1">-${dealDiscount}%</span>` : 
+                `FCFA${p.price}`
+              } · stock: ${p.stock} ${p.isHot ? '🔥' : ''} ${p.isNew ? '✨' : ''}
+            </span>
+          </div>
+          <div class="shrink-0">
+            <button class="edit-product-btn text-blue-600 mr-2" data-id="${p.id}">✏️ Edit</button>
+            <button class="delete-product-btn text-red-500" data-id="${p.id}">Delete</button>
+          </div>
+        </div>
+        <div class="mt-2 flex items-center gap-2 flex-wrap">
+          <span class="text-xs text-slate-500">Deal of Today</span>
+          <input
+            type="number"
+            min="1"
+            max="95"
+            value="${dealDiscount || ''}"
+            placeholder="% off"
+            class="deal-discount-input border rounded px-2 py-1 text-sm w-24"
+            data-id="${p.id}"
+          />
+          <button class="set-deal-btn text-xs bg-primary text-white px-3 py-1 rounded-full" data-id="${p.id}">
+            Save Deal
+          </button>
+          ${hasDeal
+            ? `<button class="remove-deal-btn text-xs bg-slate-200 px-3 py-1 rounded-full" data-id="${p.id}">Remove Deal</button>`
+            : ''
+          }
+        </div>
       </div>
-    </div>
-  `;
-}).join('');
+    `;
+  }).join('');
 
   document.querySelectorAll('.edit-product-btn').forEach(btn =>
     btn.addEventListener('click', () => openEditProduct(btn.dataset.id))
@@ -1270,37 +1458,38 @@ document.getElementById('productsList').innerHTML = products.map(p => {
   );
 
   document.querySelectorAll('.delete-product-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (confirm('Delete?')) {
-        let prods = getProducts().filter(p => p.id !== btn.dataset.id);
-        let featured = getFeaturedIds();
+        let prods = (await getProducts()).filter(p => p.id !== btn.dataset.id);
+        let featured = await getFeaturedIds();
         if (featured.includes(btn.dataset.id)) {
-          setFeaturedIds(featured.filter(id => id !== btn.dataset.id));
+          await setFeaturedIds(featured.filter(id => id !== btn.dataset.id));
         }
-        removeDealForProduct(btn.dataset.id, true);
-        saveProducts(prods);
+        await removeDealForProduct(btn.dataset.id, true);
+        await saveProducts(prods);
         showToast('Deleted');
+        refreshAll();
       }
     })
   );
 
   document.querySelectorAll('.set-deal-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const productId = btn.dataset.id;
       const input = document.querySelector(`.deal-discount-input[data-id="${productId}"]`);
       if (!input) return;
-      saveDealForProduct(productId, input.value);
+      await saveDealForProduct(productId, input.value);
     })
   );
 
   document.querySelectorAll('.remove-deal-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
-      removeDealForProduct(btn.dataset.id);
+    btn.addEventListener('click', async () => {
+      await removeDealForProduct(btn.dataset.id);
     })
   );
 }
 
-function renderAdminSearchSuggestions(query = "") {
+async function renderAdminSearchSuggestions(query = "") {
   const suggestionsBox = document.getElementById('productListSearchSuggestions');
   if (!suggestionsBox) return;
 
@@ -1311,7 +1500,7 @@ function renderAdminSearchSuggestions(query = "") {
     return;
   }
 
-  const matches = getProducts()
+  const matches = (await getProducts())
     .filter(p => (p.name || '').toLowerCase().includes(q))
     .slice(0, ADMIN_SEARCH_SUGGESTION_LIMIT);
 
@@ -1344,8 +1533,8 @@ function renderAdminSearchSuggestions(query = "") {
   });
 }
 
-function openEditProduct(id) {
-  let p = getProducts().find(p => p.id === id);
+async function openEditProduct(id) {
+  let p = (await getProducts()).find(p => p.id === id);
   if (!p) return;
 
   let form = document.getElementById('editForm');
@@ -1362,33 +1551,22 @@ function openEditProduct(id) {
   form.cpu.value = p.cpu || '';
   form.specs.value = p.specs || '';
   form.deliveryEstimate.value = p.deliveryEstimate || '';
-    editAddedImages = p.images && Array.isArray(p.images) ? [...p.images] : [p.image];
+  
+  editAddedImages = p.images && Array.isArray(p.images) ? [...p.images] : [p.image];
   updateMultiImagePreviews('editMultiImagePreviews', 'editImagesJsonField', editAddedImages);
-    editVariantsList = p.variants ? JSON.parse(JSON.stringify(p.variants)) : [];
+  editVariantsList = p.variants ? JSON.parse(JSON.stringify(p.variants)) : [];
   renderVariantsUI('editVariantsContainer', editVariantsList);
 
   window.editingId = id;
   openModal('editModal');
 }
-document.getElementById('editMultiImageUpload')?.addEventListener('change', (e) => {
-  const files = Array.from(e.target.files);
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      editAddedImages.push(ev.target.result);
-      updateMultiImagePreviews('editMultiImagePreviews', 'editImagesJsonField', editAddedImages);
-    };
-    reader.readAsDataURL(file);
-  });
-  e.target.value = '';
-});
+
 document.getElementById('editForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!window.editingId) return;
 
   let fd = new FormData(e.target);
   
-  // Process images
   let allImages = [...editAddedImages];
   const mainImage = fd.get('image');
   
@@ -1398,17 +1576,13 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
     allImages.unshift(mainImage);
   }
   
-  // Add URLs from the comma-separated field
   const urlInput = fd.get('imageUrls');
   if (urlInput) {
     let urls = urlInput.split(',').map(u => u.trim()).filter(u => u);
     allImages = [...allImages, ...urls];
   }
   
-  // Compress images
   const processedImages = await processImagesForUpload(allImages);
-  
-  // Process variants
   const validVariants = editVariantsList.filter(v => v.type.trim() && v.values.length);
 
   let updated = {
@@ -1449,10 +1623,11 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   }
 
   // Always update localStorage
-  let prods = getProducts();
+  let prods = await getProducts();
   let idx = prods.findIndex(p => p.id === window.editingId);
   if (idx !== -1) prods[idx] = updated;
-  saveProducts(prods);
+  localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+  GLOBAL_PRODUCTS = prods;
   
   closeModal('editModal');
   showToast('Product updated');
@@ -1463,10 +1638,8 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   let fd = new FormData(e.target);
   
-  // Get main image
   const mainImage = fd.get('image') || 'https://placehold.co/600x400';
   
-  // Process added images (compress them)
   let allImages = [...addedImages];
   if (allImages.length === 0) {
     allImages = [mainImage];
@@ -1474,10 +1647,7 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     allImages.unshift(mainImage);
   }
   
-  // Compress images before saving
   const processedImages = await processImagesForUpload(allImages);
-  
-  // Process variants
   const validVariants = variantsList.filter(v => v.type.trim() && v.values.length);
   
   let newProd = {
@@ -1487,8 +1657,8 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     category: fd.get('category'),
     description: fd.get('description') || '',
     stock: Number(fd.get('stock')),
-    image: processedImages[0], // First image as main
-    images: processedImages,   // All images as array
+    image: processedImages[0],
+    images: processedImages,
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand') || '',
@@ -1511,9 +1681,10 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   }
 
   // Always save to localStorage as backup
-  let prods = getProducts();
+  let prods = await getProducts();
   prods.unshift(newProd);
-  saveProducts(prods);
+  localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+  GLOBAL_PRODUCTS = prods;
 
   // Reset form
   e.target.reset();
@@ -1525,6 +1696,7 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   showToast(savedToCloud ? '✅ Product added to cloud!' : '⚠️ Product saved locally');
   refreshAll();
 });
+
 async function loadAdminFromSupabase() {
   try {
     const client = getSupabase();
@@ -1556,6 +1728,7 @@ async function loadAdminFromSupabase() {
   }
   return null;
 }
+
 document.getElementById('imageUpload')?.addEventListener('change', (e) => {
   let file = e.target.files[0];
   if (file) {
@@ -1567,9 +1740,9 @@ document.getElementById('imageUpload')?.addEventListener('change', (e) => {
   }
 });
 
-function populateFeaturedSelect() {
-  let products = getProducts();
-  let featuredIds = getFeaturedIds();
+async function populateFeaturedSelect() {
+  let products = await getProducts();
+  let featuredIds = await getFeaturedIds();
   let sel = document.getElementById('featuredSelect');
   let available = products.filter(p => !featuredIds.includes(p.id));
 
@@ -1604,7 +1777,7 @@ document.getElementById('addFeaturedBtn')?.addEventListener('click', () => {
   }
 });
 
-document.getElementById('businessForm').addEventListener('submit', (e) => {
+document.getElementById('businessForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   let info = {
     shopName: e.target.shopName.value,
@@ -1615,27 +1788,28 @@ document.getElementById('businessForm').addEventListener('submit', (e) => {
     instagram: e.target.instagram.value,
     tiktok: e.target.tiktok.value
   };
-  setStorage(STORAGE.BUSINESS, info);
+  await saveBusinessInfo(info);
   showToast('Business info saved');
   refreshAll();
 });
 
-document.getElementById('resetDefaultBtn')?.addEventListener('click', () => {
+document.getElementById('resetDefaultBtn')?.addEventListener('click', async () => {
   if (confirm('Reset to default products?')) {
-    setStorage(STORAGE.PRODUCTS, DEFAULT_PRODUCTS);
-    setDealsOfToday([]);
-    let currentFeatured = getFeaturedIds();
+    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
+    GLOBAL_PRODUCTS = DEFAULT_PRODUCTS;
+    await setDealsOfToday([]);
+    let currentFeatured = await getFeaturedIds();
     let validFeatured = currentFeatured.filter(id =>
       DEFAULT_PRODUCTS.some(p => p.id === id)
     );
-    setFeaturedIds(validFeatured);
+    await setFeaturedIds(validFeatured);
     refreshAll();
     showToast('Reset done');
   }
 });
 
-function loadBusinessForm() {
-  let info = getBusinessInfo();
+async function loadBusinessForm() {
+  let info = await getBusinessInfo();
   let form = document.getElementById('businessForm');
   if (form) {
     form.shopName.value = info.shopName;
@@ -1647,7 +1821,6 @@ function loadBusinessForm() {
     form.tiktok.value = info.tiktok || '';
   }
   
-  // Update admin sidebar header shop name
   const adminHeader = document.getElementById('adminHeaderShopName');
   if (adminHeader) {
     if (info.shopName && info.shopName.toLowerCase() !== 'shopboss') {
@@ -1655,7 +1828,6 @@ function loadBusinessForm() {
     }
   }
   
-  // Update main header shop name
   const mainHeader = document.getElementById('mainHeaderShopName');
   if (mainHeader) {
     if (info.shopName && info.shopName.toLowerCase() !== 'shopboss') {
@@ -1670,45 +1842,28 @@ function loadBusinessForm() {
 //         CONTACT & LOCATION PAGE
 // ==========================================
 
-function getContactInfo() {
-  return getStorage(STORAGE.CONTACT, {
-    latitude: 40.7128,
-    longitude: -74.0060,
-    hours: "Mon - Fri: 9:00 AM - 6:00 PM\nSat: 10:00 AM - 4:00 PM\nSun: Closed",
-    description: "",
-    shopPhoto: ""  // ✅ Add this
-  });
-}
-
-function setContactInfo(info) {
-  setStorage(STORAGE.CONTACT, info);
-}
-
-function loadContactForm() {
-  let contact = getContactInfo();
+async function loadContactForm() {
+  let contact = await getContactInfo();
   let form = document.getElementById('contactForm');
   if (form) {
     form.latitude.value = contact.latitude;
     form.longitude.value = contact.longitude;
     form.hours.value = contact.hours;
     form.description.value = contact.description;
-    // ✅ Load shop photo
     if (contact.shopPhoto) {
       document.getElementById('shopPhotoPreviewImg').src = contact.shopPhoto;
       document.getElementById('shopPhotoPreviewImg').classList.remove('hidden');
       document.getElementById('shopPhotoDataField').value = contact.shopPhoto;
     }
-    // Also set the URL field
     if (form.shopPhoto) form.shopPhoto.value = contact.shopPhoto || '';
   }
   updateContactPreview();
 }
 
-function updateContactPreview() {
-  let business = getBusinessInfo();
-  let contact = getContactInfo();
+async function updateContactPreview() {
+  let business = await getBusinessInfo();
+  let contact = await getContactInfo();
   
-  // Update all preview fields
   document.getElementById('previewShopName').textContent = business.shopName || 'ShopBoss';
   document.getElementById('previewAddress').textContent = business.address;
   document.getElementById('previewPhone').textContent = business.phone;
@@ -1737,30 +1892,23 @@ function updateContactPreview() {
   }
 }
 
-
-
-document.getElementById('contactForm')?.addEventListener('submit', (e) => {
+document.getElementById('contactForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   let info = {
     latitude: parseFloat(e.target.latitude.value) || 40.7128,
     longitude: parseFloat(e.target.longitude.value) || -74.0060,
     hours: e.target.hours.value,
     description: e.target.description.value,
-    shopPhoto: document.getElementById('shopPhotoDataField')?.value || e.target.shopPhoto?.value || ''  // ✅ Add this
+    shopPhoto: document.getElementById('shopPhotoDataField')?.value || e.target.shopPhoto?.value || ''
   };
-  setContactInfo(info);
+  await saveContactInfo(info);
   updateContactPreview();
   showToast('Location settings saved');
 });
 
-// Update preview when business info changes
-const originalBusinessSubmit = document.getElementById('businessForm')?.onsubmit;
-document.getElementById('businessForm')?.addEventListener('submit', (e) => {
-  setTimeout(updateContactPreview, 500);
-});
-
-function buildCategoryFilters() {
-  let cats = [...new Set(getProducts().map(p => p.category))];
+async function buildCategoryFilters() {
+  let products = await getProducts();
+  let cats = [...new Set(products.map(p => p.category))];
   let html = `<button data-cat="all" class="filter-btn active">All</button>`;
   html += cats.map(c => `<button data-cat="${c}" class="filter-btn">${c}</button>`).join('');
 
@@ -1776,21 +1924,22 @@ function buildCategoryFilters() {
   });
 }
 
-function refreshAll() {
-  renderAllProducts();
-  renderHotProducts();
-  renderNewProducts();
-  renderFeaturedProduct();
-  buildCategoryFilters();
-  renderProductListAdmin();
-  populateFeaturedSelect();
-   updateOrderStats();
-  renderAnalytics();
-   renderCustomerList();
-   renderAnalyticsDashboard()
+async function refreshAll() {
+  await renderAllProducts();
+  await renderHotProducts();
+  await renderNewProducts();
+  await renderFeaturedProduct();
+  await buildCategoryFilters();
+  await renderProductListAdmin();
+  await populateFeaturedSelect();
+  await updateOrderStats();
+  await renderAnalytics();
+  await renderCustomerList();
+  await renderAnalyticsDashboard();
   renderWishlistCount();
   renderCart();
 }
+
 function updateMultiImagePreviews(containerId, hiddenFieldId, imagesArray) {
   const previewContainer = document.getElementById(containerId);
   const hiddenField = document.getElementById(hiddenFieldId);
@@ -1812,11 +1961,10 @@ function updateMultiImagePreviews(containerId, hiddenFieldId, imagesArray) {
     });
   });
 }
+
 // ===============================================
 //           VARIANTS MANAGEMENT (Admin)
 // ===============================================
-
-
 
 function renderVariantsUI(containerId, list, onChange) {
   const container = document.getElementById(containerId);
@@ -1855,7 +2003,6 @@ function addVariant(list, containerId, onChange) {
   if (onChange) onChange(list);
 }
 
-// Init add form variants
 function initAddVariants() {
   variantsList = [];
   renderVariantsUI('variantsContainer', variantsList);
@@ -1864,7 +2011,6 @@ function initAddVariants() {
   });
 }
 
-// Init edit form variants
 function initEditVariants() {
   editVariantsList = [];
   renderVariantsUI('editVariantsContainer', editVariantsList);
@@ -1872,14 +2018,15 @@ function initEditVariants() {
     addVariant(editVariantsList, 'editVariantsContainer');
   });
 }
+
 // ===============================================
 //           ANALYTICS TRACKING
 // ===============================================
 
-function trackProductSearch(query) {
+async function trackProductSearch(query) {
   if (!query || query.trim().length < 2) return;
   
-  const analytics = getStorage(STORAGE.SEARCH_ANALYTICS, {});
+  const analytics = await getSearchAnalytics();
   const normalizedQuery = query.trim().toLowerCase();
   
   if (!analytics[normalizedQuery]) {
@@ -1894,23 +2041,22 @@ function trackProductSearch(query) {
   analytics[normalizedQuery].count++;
   analytics[normalizedQuery].lastSearched = new Date().toISOString();
   
-  setStorage(STORAGE.SEARCH_ANALYTICS, analytics);
+  await saveSearchAnalytics(analytics);
 }
 
-function trackSearchResults(query, resultCount) {
+async function trackSearchResults(query, resultCount) {
   if (!query || query.trim().length < 2) return;
   
-  const analytics = getStorage(STORAGE.SEARCH_ANALYTICS, {});
+  const analytics = await getSearchAnalytics();
   const normalizedQuery = query.trim().toLowerCase();
   
   if (analytics[normalizedQuery]) {
     analytics[normalizedQuery].results = resultCount;
-    setStorage(STORAGE.SEARCH_ANALYTICS, analytics);
+    await saveSearchAnalytics(analytics);
   }
   
-  // Track failed searches
   if (resultCount === 0) {
-    const failedSearches = getStorage(STORAGE.FAILED_SEARCHES, []);
+    const failedSearches = await getFailedSearches();
     const existingIndex = failedSearches.findIndex(fs => fs.query.toLowerCase() === normalizedQuery);
     
     if (existingIndex !== -1) {
@@ -1924,14 +2070,14 @@ function trackSearchResults(query, resultCount) {
       });
     }
     
-    setStorage(STORAGE.FAILED_SEARCHES, failedSearches);
+    await saveFailedSearches(failedSearches);
   }
 }
 
-function trackProductView(productId) {
+async function trackProductView(productId) {
   if (!productId) return;
   
-  const analytics = getStorage(STORAGE.VIEW_ANALYTICS, {});
+  const analytics = await getViewAnalytics();
   
   if (!analytics[productId]) {
     analytics[productId] = {
@@ -1944,37 +2090,21 @@ function trackProductView(productId) {
   analytics[productId].count++;
   analytics[productId].lastViewed = new Date().toISOString();
   
-  setStorage(STORAGE.VIEW_ANALYTICS, analytics);
+  await saveViewAnalytics(analytics);
 }
-
-function getSearchAnalytics() {
-  return getStorage(STORAGE.SEARCH_ANALYTICS, {});
-}
-
-function getViewAnalytics() {
-  return getStorage(STORAGE.VIEW_ANALYTICS, {});
-}
-
-function getFailedSearches() {
-  return getStorage(STORAGE.FAILED_SEARCHES, []);
-}
-// Update the search input event listener in init()
-
-
 
 // ===============================================
 //           ORDER MANAGEMENT
 // ===============================================
 
-function renderOrderList() {
+async function renderOrderList() {
   const container = document.getElementById('ordersListContainer');
   if (!container) return;
   
-  let orders = getOrders();
+  let orders = await getOrders();
   const searchQuery = document.getElementById('orderSearchInput')?.value.trim().toLowerCase() || '';
   const statusFilter = document.getElementById('orderStatusFilter')?.value || 'all';
   
-  // Apply filters
   if (searchQuery) {
     orders = orders.filter(o => 
       o.id.toLowerCase().includes(searchQuery) ||
@@ -1987,8 +2117,7 @@ function renderOrderList() {
     orders = orders.filter(o => (o.status || 'pending') === statusFilter);
   }
   
-  // Update counts
-  updateOrderStats();
+  await updateOrderStats();
   
   if (!orders.length) {
     container.innerHTML = '<p class="text-center text-slate-400 py-8">No orders found.</p>';
@@ -2009,7 +2138,6 @@ function renderOrderList() {
     return `
       <div class="${colors.bg} ${colors.border} border rounded-2xl p-5 transition-all hover:shadow-md">
         <div class="flex flex-col md:flex-row justify-between gap-4">
-          <!-- Order Info -->
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-3">
               <span class="font-mono font-bold text-lg">#${order.id}</span>
@@ -2039,7 +2167,6 @@ function renderOrderList() {
               <p class="text-sm">📍 ${order.address}</p>
             </div>
             
-            <!-- Items -->
             <div class="mb-3">
               <p class="text-xs text-gray-500 uppercase font-bold mb-2">Items (${order.items.length})</p>
               <div class="space-y-1">
@@ -2055,7 +2182,6 @@ function renderOrderList() {
             <div class="flex items-center justify-between">
               <p class="text-xl font-bold">Total: FCFA${order.total.toFixed(2)}</p>
               
-              <!-- WhatsApp Contact -->
               <a href="https://wa.me/${order.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(order.customer)}!%20About%20your%20order%20%23${order.id}" 
                  target="_blank"
                  class="inline-flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-green-600 transition-colors">
@@ -2064,7 +2190,6 @@ function renderOrderList() {
             </div>
           </div>
           
-          <!-- Status Update -->
           <div class="md:w-64 flex flex-col gap-2">
             <p class="text-xs text-gray-500 uppercase font-bold">Update Status</p>
             <button onclick="updateOrderStatus('${order.id}', 'confirmed')" 
@@ -2084,7 +2209,6 @@ function renderOrderList() {
               ❌ Cancel Order
             </button>
             
-            <!-- Tracking Link -->
             <div class="mt-2 p-3 bg-gray-100 rounded-xl">
               <p class="text-xs text-gray-500 mb-1">Tracking Link</p>
               <div class="flex gap-2">
@@ -2103,8 +2227,8 @@ function renderOrderList() {
   }).join('');
 }
 
-function updateOrderStatus(orderId, newStatus) {
-  const orders = getOrders();
+async function updateOrderStatus(orderId, newStatus) {
+  const orders = await getOrders();
   const orderIndex = orders.findIndex(o => o.id === orderId);
   
   if (orderIndex === -1) {
@@ -2122,15 +2246,19 @@ function updateOrderStatus(orderId, newStatus) {
   
   if (confirm(`Change order #${orderId} status to "${statusLabels[newStatus]}"?`)) {
     orders[orderIndex].status = newStatus;
-    setStorage(STORAGE.ORDERS, orders);
+    localStorage.setItem(STORAGE.ORDERS, JSON.stringify(orders));
+    
+    // Update in Supabase
+    await updateOrderStatusInDB(orderId, newStatus);
+    
     showToast(`Order #${orderId} marked as ${statusLabels[newStatus]}`);
     renderOrderList();
-    renderAnalytics(); // Update dashboard stats
+    renderAnalytics();
   }
 }
 
-function updateOrderStats() {
-  const orders = getOrders();
+async function updateOrderStats() {
+  const orders = await getOrders();
   
   const counts = {
     pending: orders.filter(o => (o.status || 'pending') === 'pending').length,
@@ -2147,7 +2275,6 @@ function updateOrderStats() {
   document.getElementById('cancelledOrdersCount').textContent = counts.cancelled;
 }
 
-// Copy tracking link in admin
 window.copyTrackingLinkAdmin = function(orderId, btn) {
   const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', '');
   const link = `${baseUrl}track.html?order=${orderId}`;
@@ -2164,26 +2291,18 @@ window.copyTrackingLinkAdmin = function(orderId, btn) {
   showToast('Tracking link copied!');
 };
 
-
 // ===============================================
 //           CUSTOMER MANAGEMENT
 // ===============================================
 
-
-
-function getCustomers() {
-  return getStorage(ACCOUNT_STORAGE_KEY, []);
-}
-
-function renderCustomerList() {
+async function renderCustomerList() {
   const container = document.getElementById('customerListContainer');
   if (!container) return;
   
-  let customers = getCustomers();
+  let customers = await getCustomers();
   const searchQuery = document.getElementById('customerSearchInput')?.value?.trim()?.toLowerCase() || '';
-  const orders = getOrders();
+  const orders = await getOrders();
   
-  // Apply search filter
   if (searchQuery) {
     customers = customers.filter(c => 
       c.name.toLowerCase().includes(searchQuery) ||
@@ -2192,19 +2311,16 @@ function renderCustomerList() {
     );
   }
   
-  // Update stats
-  updateCustomerStats(customers, orders);
+  await updateCustomerStats(customers, orders);
   
   if (!customers.length) {
     container.innerHTML = '<p class="text-center text-slate-400 py-8">No customers found.</p>';
     return;
   }
   
-  // Sort by newest first
   customers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   
   container.innerHTML = customers.map(customer => {
-    // Find orders for this customer
     const customerOrders = orders.filter(o => {
       const orderName = (o.customer || '').toLowerCase();
       const custName = (customer.name || '').toLowerCase();
@@ -2221,7 +2337,6 @@ function renderCustomerList() {
     return `
       <div class="border rounded-2xl p-5 bg-white hover:shadow-md transition-all">
         <div class="flex items-start gap-4">
-          <!-- Avatar -->
           <div class="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center text-xl font-bold text-primary flex-shrink-0">
             ${customer.name.charAt(0).toUpperCase()}
           </div>
@@ -2249,7 +2364,6 @@ function renderCustomerList() {
               </span>
             </div>
             
-            <!-- Stats Row -->
             <div class="grid grid-cols-3 gap-3 mt-4">
               <div class="bg-gray-50 rounded-xl p-3 text-center">
                 <p class="text-lg font-bold text-primary">${customerOrders.length}</p>
@@ -2267,7 +2381,6 @@ function renderCustomerList() {
               </div>
             </div>
             
-            <!-- Recent Orders -->
             ${customerOrders.length > 0 ? `
               <div class="mt-3 pt-3 border-t">
                 <p class="text-xs font-bold text-gray-400 uppercase mb-2">Recent Orders</p>
@@ -2289,7 +2402,6 @@ function renderCustomerList() {
               </div>
             ` : ''}
             
-            <!-- Actions -->
             <div class="flex gap-2 mt-3 pt-3 border-t">
               ${customer.phone ? `
                 <a href="https://wa.me/${customer.phone.replace(/\D/g,'')}" target="_blank" 
@@ -2316,7 +2428,6 @@ function renderCustomerList() {
 function updateCustomerStats(customers, orders) {
   document.getElementById('totalCustomersStat').textContent = customers.length;
   
-  // Customers with at least one order
   const activeCustomers = customers.filter(c => {
     return orders.some(o => {
       const orderName = (o.customer || '').toLowerCase();
@@ -2326,19 +2437,18 @@ function updateCustomerStats(customers, orders) {
   });
   document.getElementById('activeCustomersStat').textContent = activeCustomers.length;
   
-  // New customers this month
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const newCustomers = customers.filter(c => new Date(c.createdAt) >= startOfMonth);
   document.getElementById('newCustomersStat').textContent = newCustomers.length;
 }
 
-function deleteCustomer(customerId, customerName) {
+async function deleteCustomer(customerId, customerName) {
   if (!confirm(`Delete customer "${customerName}"? This cannot be undone.`)) return;
   
-  const accounts = getCustomers();
+  const accounts = await getCustomers();
   const updatedAccounts = accounts.filter(a => a.id !== customerId);
-  setStorage(ACCOUNT_STORAGE_KEY, updatedAccounts);
+  await saveCustomers(updatedAccounts);
   
   showToast(`Customer "${customerName}" deleted`);
   renderCustomerList();
@@ -2350,94 +2460,99 @@ document.getElementById('shopPhotoUpload')?.addEventListener('change', (e) => {
   if (file) {
     const reader = new FileReader();
     reader.onload = (ev) => {
-      // Show preview
       const previewImg = document.getElementById('shopPhotoPreviewImg');
       previewImg.src = ev.target.result;
       previewImg.classList.remove('hidden');
-      
-      // Save to hidden field
       document.getElementById('shopPhotoDataField').value = ev.target.result;
     };
     reader.readAsDataURL(file);
   }
 });
 
+// ===============================================
+//           DEALS FUNCTIONS
+// ===============================================
 
+async function saveDealForProduct(productId, discount) {
+  const cleanDiscount = Number(discount);
+  if (!Number.isFinite(cleanDiscount) || cleanDiscount < 1 || cleanDiscount > 95) {
+    showToast("Discount must be between 1 and 95");
+    return;
+  }
+  const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
+  deals.push({ id: productId, discount: cleanDiscount });
+  await setDealsOfToday(deals);
+  showToast("Deal of the day saved");
+  refreshAll();
+}
 
+async function removeDealForProduct(productId, silent = false) {
+  const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
+  await setDealsOfToday(deals);
+  if (!silent) {
+    showToast("Deal removed");
+    refreshAll();
+  }
+}
 
+async function toggleFeatured(id) {
+  let ids = await getFeaturedIds();
+  if (ids.includes(id)) {
+    ids = ids.filter(i => i !== id);
+    showToast("Removed from Featured");
+  } else {
+    ids.push(id);
+    showToast("Added to Featured");
+  }
+  await setFeaturedIds(ids);
+  refreshAll();
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ===============================================
+//                    INIT
+// ===============================================
 
 async function init() {
-  if (!getStorage(STORAGE.PRODUCTS)) setStorage(STORAGE.PRODUCTS, DEFAULT_PRODUCTS);
-  if (!getStorage(STORAGE.FEATURED) && getProducts().length) {
-    setFeaturedIds([getProducts()[0].id]);
+  GLOBAL_PRODUCTS = await getProducts();
+  
+  if (!localStorage.getItem(STORAGE.PRODUCTS)) {
+    localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
+    GLOBAL_PRODUCTS = DEFAULT_PRODUCTS;
   }
-
-
+  
+  const existingFeatured = await getFeaturedIds();
+  if (!existingFeatured.length && GLOBAL_PRODUCTS.length) {
+    await setFeaturedIds([GLOBAL_PRODUCTS[0].id]);
+  }
 
   const cloudProducts = await loadAdminFromSupabase();
-if (cloudProducts) {
-  console.log('📦 Loaded from cloud');
-} else {
-  console.log('📦 Using local storage');
-}
-  refreshAll();
-
-document.getElementById('multiImageUpload')?.addEventListener('change', (e) => {
-  const files = Array.from(e.target.files);
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      addedImages.push(ev.target.result);
-      updateMultiImagePreviews();
-    };
-    reader.readAsDataURL(file);
-  });
-  e.target.value = ''; // allow re-upload same file
-});
-  refreshAll();
-  loadBusinessForm();
-
-document.getElementById('searchInput').addEventListener('input', (e) => {
-  currentSearch = e.target.value;
-  currentPage = 1;
-  
-  // Track search analytics
-  const query = e.target.value.trim();
-  if (query) {
-    trackProductSearch(query);
-    const products = getProducts();
-    const results = products.filter(p => 
-      p.name.toLowerCase().includes(query.toLowerCase())
-    ).length;
-    trackSearchResults(query, results);
+  if (cloudProducts) {
+    console.log('📦 Loaded from cloud');
+    GLOBAL_PRODUCTS = cloudProducts;
+  } else {
+    console.log('📦 Using local storage');
   }
   
-  renderAllProducts();
-});
+  refreshAll();
+
+  loadBusinessForm();
+
+  document.getElementById('searchInput').addEventListener('input', async (e) => {
+    currentSearch = e.target.value;
+    currentPage = 1;
+    
+    const query = e.target.value.trim();
+    if (query) {
+      await trackProductSearch(query);
+      const products = await getProducts();
+      const results = products.filter(p => 
+        p.name.toLowerCase().includes(query.toLowerCase())
+      ).length;
+      await trackSearchResults(query, results);
+    }
+    
+    renderAllProducts();
+  });
 
   document.getElementById('sortSelect').addEventListener('change', (e) => {
     currentSort = e.target.value;
@@ -2493,18 +2608,18 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
       if (view === 'businessInfo') loadBusinessForm();
       if (view === 'contactPage') loadContactForm();
       if (view === 'reviews') {
-      populateReviewFilters();
-      renderReviewsList();
-      };
+        populateReviewFilters();
+        renderReviewsList();
+      }
       if (view === 'analyticsDashboard') {
-      renderAnalyticsDashboard();
-      };
+        renderAnalyticsDashboard();
+      }
       if (view === 'ordersManagement') {
-      renderOrderList();
-     };
+        renderOrderList();
+      }
       if (view === 'customerManagement') {
-  renderCustomerList();
-}
+        renderCustomerList();
+      }
     });
   });
 
@@ -2512,7 +2627,7 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
   document.querySelector('.nav-btn[data-view="home"]').classList.add('active');
   loadBusinessForm();
   loadContactForm();
-    initAddVariants();
+  initAddVariants();
   initEditVariants();
 }
 

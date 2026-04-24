@@ -55,13 +55,48 @@ async function addProductToDB(product) {
         cpu: product.cpu || '',
         specs: product.specs || '',
         variants: product.variants || [],
-        deliveryEstimate: product.deliveryEstimate || ''
+        deliveryEstimate: product.deliveryEstimate || ''  // Try without quotes
       }])
       .select();
     
     if (error) {
       console.error('❌ Error saving to Supabase:', error.message);
       console.error('Error details:', error);
+      
+      // If the column name is the issue, try with snake_case
+      if (error.message.includes('deliveryEstimate') || error.message.includes('delivery_estimate')) {
+        console.log('🔄 Retrying with snake_case column name...');
+        const { data: retryData, error: retryError } = await client
+          .from('products')
+          .insert([{
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            category: product.category || 'phone',
+            description: product.description || '',
+            stock: product.stock || 0,
+            image: product.image || 'https://placehold.co/600x400',
+            images: product.images || [product.image],
+            isHot: product.isHot || false,
+            isNew: product.isNew || false,
+            brand: product.brand || '',
+            os: product.os || '',
+            cpu: product.cpu || '',
+            specs: product.specs || '',
+            variants: product.variants || []
+            // Don't include deliveryEstimate column at all
+          }])
+          .select();
+        
+        if (retryError) {
+          console.error('❌ Retry also failed:', retryError.message);
+          return null;
+        }
+        
+        console.log('✅ Product saved to Supabase! (without deliveryEstimate)');
+        return retryData ? retryData[0] : null;
+      }
+      
       return null;
     }
     

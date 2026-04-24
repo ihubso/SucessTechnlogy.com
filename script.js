@@ -2360,67 +2360,66 @@ async function viewMyOrders() {
     return;
   }
 
-  const orders = await getOrdersFromDB() || [];
+  // Fetch orders from Supabase (or fallback to localStorage)
+  const orders = await getOrdersFromDB() || JSON.parse(localStorage.getItem('shop_orders_v1') || '[]');
   
   const myOrders = orders.filter(o => {
     const customerName = (o.customer_name || o.customer || '').toLowerCase().trim();
     const userName = (user.name || '').toLowerCase().trim();
     const userPhone = (user.phone || '').replace(/\D/g, '');
     const orderPhone = (o.phone || '').replace(/\D/g, '');
-    
     const nameMatch = customerName.includes(userName) || userName.includes(customerName);
     const phoneMatch = userPhone && orderPhone && (userPhone.includes(orderPhone) || orderPhone.includes(userPhone));
     const emailMatch = user.email && o.email && o.email.toLowerCase() === user.email.toLowerCase();
-    
     return nameMatch || phoneMatch || emailMatch;
   });
 
   // Remove existing overlay if any
-  const existing = document.getElementById('myOrdersOverlay');
-  if (existing) existing.remove();
+  const existingOverlay = document.getElementById('myOrdersOverlay');
+  if (existingOverlay) existingOverlay.remove();
 
-  const overlayHTML = `
-    <div id="myOrdersOverlay" class="orders-overlay" style="position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;">
-      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);" onclick="document.getElementById('myOrdersOverlay').remove();document.body.style.overflow='';"></div>
-      <div style="position:relative;background:white;border-radius:2rem;width:min(90vw,700px);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.25);animation:slideUp 0.3s ease;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:1.5rem;border-bottom:1px solid #e5e7eb;">
-          <h2 style="font-size:1.5rem;font-weight:700;">📋 My Orders (${myOrders.length})</h2>
-          <button onclick="document.getElementById('myOrdersOverlay').remove();document.body.style.overflow='';" style="width:2.5rem;height:2.5rem;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:1.5rem;cursor:pointer;border:none;">✕</button>
+  // Build modal HTML – consistent with your design
+  const modalHTML = `
+    <div id="myOrdersOverlay" class="my-orders-modal fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm" style="display: flex;">
+      <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-modal-slide-up mx-4">
+        <div class="flex justify-between items-center p-6 border-b">
+          <h2 class="text-2xl font-bold">📋 My Orders (${myOrders.length})</h2>
+          <button class="close-orders-modal w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-2xl">×</button>
         </div>
-        <div style="flex:1;overflow-y:auto;padding:1.5rem;">
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
           ${myOrders.length === 0 ? `
-            <div style="text-align:center;padding:3rem 0;">
-              <span style="font-size:4rem;display:block;margin-bottom:1rem;">📦</span>
-              <h3 style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;">No Orders Yet</h3>
-              <p style="color:#6b7280;">Start shopping to see your orders here!</p>
-              <p style="color:#9ca3af;font-size:0.75rem;margin-top:1rem;">Logged in as: <strong>${user.name}</strong></p>
+            <div class="text-center py-12">
+              <div class="text-6xl mb-4">📦</div>
+              <h3 class="text-xl font-bold mb-2">No Orders Yet</h3>
+              <p class="text-gray-500">Start shopping to see your orders here!</p>
+              <p class="text-xs text-gray-400 mt-4">Logged in as: <strong>${escapeHtml(user.name)}</strong></p>
             </div>
           ` : myOrders.slice(0, 20).map(order => {
             const status = order.status || 'pending';
-            const statusColors = {
+            const statusConfig = {
               pending: { bg: '#fef9c3', border: '#fde68a', text: '#a16207', icon: '🟡' },
               confirmed: { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d', icon: '🟢' },
               processing: { bg: '#dbeafe', border: '#bfdbfe', text: '#1d4ed8', icon: '🔵' },
               completed: { bg: '#d1fae5', border: '#a7f3d0', text: '#065f46', icon: '✅' },
               cancelled: { bg: '#fee2e2', border: '#fecaca', text: '#991b1b', icon: '❌' }
             };
-            const c = statusColors[status] || statusColors.pending;
+            const cfg = statusConfig[status] || statusConfig.pending;
             return `
-              <div style="background:${c.bg};border-radius:1rem;padding:1rem;border:1px solid ${c.border};margin-bottom:0.75rem;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem;">
+              <div class="rounded-2xl p-4 border" style="background:${cfg.bg}; border-color:${cfg.border};">
+                <div class="flex justify-between items-start flex-wrap gap-2">
                   <div>
-                    <span style="font-family:monospace;font-weight:700;">${order.id}</span>
-                    <span style="color:${c.text};font-size:0.875rem;margin-left:0.5rem;font-weight:500;">${c.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                    <span class="font-mono font-bold">${order.id}</span>
+                    <span class="ml-2 text-sm font-medium" style="color:${cfg.text}">${cfg.icon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span>
                   </div>
-                  <span style="font-weight:700;font-size:1.125rem;">FCFA ${(order.total || 0).toFixed(2)}</span>
+                  <span class="font-bold text-lg">FCFA ${(order.total || 0).toFixed(2)}</span>
                 </div>
-                <p style="font-size:0.75rem;color:#6b7280;">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', {weekday:'short',year:'numeric',month:'short',day:'numeric'})}</p>
-                <p style="font-size:0.75rem;color:#6b7280;">📍 ${order.address || 'N/A'}</p>
-                <div style="margin-top:0.5rem;display:flex;flex-wrap:wrap;gap:0.25rem;">
-                  ${(order.items || []).map(i => `<span style="background:rgba(255,255,255,0.5);padding:0.125rem 0.5rem;border-radius:999px;font-size:0.75rem;">${i.name} x${i.qty}</span>`).join('')}
+                <p class="text-xs text-gray-600 mt-2">📅 ${new Date(order.date || order.created_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
+                <p class="text-xs text-gray-600">📍 ${escapeHtml(order.address || 'N/A')}</p>
+                <div class="flex flex-wrap gap-1 mt-2">
+                  ${(order.items || []).map(i => `<span class="bg-white/60 rounded-full px-2 py-0.5 text-xs">${escapeHtml(i.name)} x${i.qty}</span>`).join('')}
                 </div>
-                <a href="track.html?order=${order.id}" target="_blank" style="display:inline-flex;align-items:center;gap:0.25rem;margin-top:0.75rem;color:#e60012;font-size:0.875rem;font-weight:500;text-decoration:none;background:rgba(255,255,255,0.5);padding:0.25rem 0.75rem;border-radius:999px;">
-                  <i class="fas fa-external-link-alt" style="font-size:0.75rem;"></i> Track Order
+                <a href="track.html?order=${order.id}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-sm text-primary font-medium hover:underline">
+                  <i class="fas fa-external-link-alt"></i> Track Order
                 </a>
               </div>
             `;
@@ -2429,15 +2428,34 @@ async function viewMyOrders() {
       </div>
     </div>
   `;
-  
-  document.body.insertAdjacentHTML('beforeend', overlayHTML);
-  document.body.style.overflow = 'hidden';
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  document.body.style.overflow = 'hidden'; // prevent background scrolling
+
+  const modalContainer = document.getElementById('myOrdersOverlay');
+  const closeBtn = modalContainer.querySelector('.close-orders-modal');
+
+  const closeModal = () => {
+    modalContainer.remove();
+    document.body.style.overflow = '';
+  };
+
+  closeBtn.addEventListener('click', closeModal);
+  modalContainer.addEventListener('click', (e) => {
+    if (e.target === modalContainer) closeModal();
+  });
 }
-window.closeMyOrdersOverlay = function() {
-  const overlay = document.getElementById('myOrdersOverlay');
-  if (overlay) overlay.remove();
-  document.body.style.overflow = '';
-};
+
+// Helper to escape HTML (prevent injection)
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
 
 
 

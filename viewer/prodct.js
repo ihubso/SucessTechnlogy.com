@@ -1,6 +1,12 @@
 // ===============================================
 //        ACTION PROGRESS BAR (Top Bar)
 // ===============================================
+
+
+
+const DEFAULT_PRODUCTS = [
+
+]; // Define some default products if needed
 const ActionProgressBar = {
   bar: null,
   fill: null,

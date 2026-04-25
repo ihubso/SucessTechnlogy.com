@@ -703,7 +703,6 @@ async function wishClick(e) {
 window.currentModalProductId = null;
 
 async function openProductDetail(id) {
-     ActionProgressBar.start();
   window.currentModalProductId = id;
   addToRecentlyViewed(id);
   await trackProductView(id);
@@ -1147,7 +1146,6 @@ async function renderProductDetailModal(id) {
       window.selectedVariants[type] = this.dataset.variantValue;
     });
   });
-     ActionProgressBar.complete();
 }
 
 window.toggleRelatedPanel = function() {
@@ -2618,79 +2616,122 @@ const BackgroundUpdater = {
 // Replace the existing init() function with this updated version:
 
 async function init() {
+  // Initialize loading manager
   LoadingManager.init();
-  LoadingManager.updateProgress(1, 'Connecting to store...');
-
+  LoadingManager.updateProgress(1, 'Initializing store connection...');
+  
   try {
-    // ---- FETCH ALL CORE DATA IN PARALLEL ----
-    LoadingManager.updateProgress(1, 'Loading store data...');
-    const [products, reviews, featuredIds, deals, businessInfo] = await Promise.all([
-      getProducts(),
-      getReviews(),
-      getFeaturedIds(),
-      getDealsOfToday(),
-      getBusinessInfo()
-    ]);
-
-    GLOBAL_PRODUCTS = products;
-    _cachedReviews = reviews;
-
-    // ---- RENDER EVERYTHING ----
-    LoadingManager.updateProgress(1, 'Rendering products...');
-    await Promise.all([
-      renderAllProducts(),
-      renderHotProducts(),
-      renderNewProducts(),
-      renderDealsOfToday(),
-      renderFeaturedProduct(),
-      renderCart(),
-      renderWishlistCount(),
-      renderRecentlyViewed(),
-      buildCategoryFilters(),
-      renderCatalogSidebar(),
-      buildBrandFilters(),
-      renderWishlistModal()
-    ]);
-
-    // ---- SETUP NAVIGATION & UI ----
+    // Step 1: Load products
+    LoadingManager.updateProgress(1, 'Loading product catalog...');
+    GLOBAL_PRODUCTS = await fetchProductsFromDB();
+    if (!GLOBAL_PRODUCTS || GLOBAL_PRODUCTS.length === 0) {
+      GLOBAL_PRODUCTS = normalizeProductImages(DEFAULT_PRODUCTS);
+      await saveProducts(GLOBAL_PRODUCTS);
+    }
+    
+    // Step 2: Load reviews
+    LoadingManager.updateProgress(1, 'Loading customer reviews...');
+    _cachedReviews = await getReviews();
+    
+    // Step 3: Render main sections
+    LoadingManager.updateProgress(1, 'Rendering product displays...');
+    await renderAllProducts();
+    await renderHotProducts();
+    await renderNewProducts();
+    await renderDealsOfToday();
+    await renderFeaturedProduct();
+    
+    // Step 4: Setup navigation and UI
     LoadingManager.updateProgress(1, 'Setting up navigation...');
+    renderRecentlyViewed();
+    await renderCart();
+    await renderWishlistCount();
+    await initSearch();
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput && searchInput.value && !searchInput.dataset.userTyped) {
+      setTimeout(() => { searchInput.value = ''; }, 200);
+    }
+    await buildCategoryFilters();
+    await renderCatalogSidebar();
     initCatalogDropdown();
+    
+    // Step 5: Setup brand section
+    LoadingManager.updateProgress(1, 'Loading brand collections...');
+    await buildBrandFilters();
     await initSliderControls();
     initializeDropdowns();
     await window.renderBrandProducts();
+    await renderWishlistModal();
     updateAccountUI();
-    await initSearch();
-
-    // Handle URL product parameter
+    
+    // Step 6: Initialize interactive features
+    LoadingManager.updateProgress(1, 'Starting interactive features...');
+    
+    // Initialize deals scroll and auto-scroll
+    setTimeout(async () => {
+      initDealsScroll();
+      if ((await getDealsOfToday()).length > 3) {
+        startAutoScroll();
+        initAutoScrollPause();
+      }
+    }, 200);
+    
+    // Step 7: Handle URL parameters
+    LoadingManager.updateProgress(1, 'Processing navigation...');
     const urlParams = new URLSearchParams(window.location.search);
     const productIdFromUrl = urlParams.get('product');
-    if (productIdFromUrl) setTimeout(() => openProductDetail(productIdFromUrl), 300);
-
-    // Featured products setup
-    if (!featuredIds.length && products.length) {
-      await setFeaturedIds([products[0].id]);
+    if (productIdFromUrl) {
+      setTimeout(() => openProductDetail(productIdFromUrl), 300);
+    }
+    
+    // Step 8: Setup featured products
+    LoadingManager.updateProgress(1, 'Configuring featured content...');
+    let featured = await getFeaturedIds();
+    if (!featured.length) {
+      let products = await getProducts();
+      if (products.length) await setFeaturedIds([products[0].id]);
     }
     currentFeaturedIndex = 0;
     await renderFeaturedProduct();
-
-    // ---- EVENT LISTENERS ----
+    
+    // Step 9: Setup event listeners
+    LoadingManager.updateProgress(1, 'Finalizing setup...');
+    
+    // Close modal when clicking backdrop
     window.onclick = (e) => {
       if (e.target.classList.contains('modal')) {
-        if (e.target.id === 'productModal') cleanCloseProductModal(true);
-        else e.target.classList.add('hidden');
+        if (e.target.id === 'productModal') {
+          cleanCloseProductModal(true);
+        } else {
+          e.target.classList.add('hidden');
+        }
       }
     };
-
-    document.getElementById('mobileMenuBtn')?.addEventListener('click', openMobileMenu);
-    document.getElementById('mobileNavClose')?.addEventListener('click', closeMobileMenu);
-    document.getElementById('mobileNavOverlay')?.addEventListener('click', closeMobileMenu);
+    
+    // Mobile Navigation Drawer listeners
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', openMobileMenu);
+    
+    const closeBtn = document.getElementById('mobileNavClose');
+    if (closeBtn) closeBtn.addEventListener('click', closeMobileMenu);
+    
+    const overlay = document.getElementById('mobileNavOverlay');
+    if (overlay) overlay.addEventListener('click', closeMobileMenu);
+    
     await renderMobileMenu();
-
-    const closeProductModalBtn = document.getElementById('closeProductModal');
-    if (closeProductModalBtn) {
-      closeProductModalBtn.onclick = () => cleanCloseProductModal(true);
-    }
-
+    
+    // Close product modal button
+        const closeProductModalBtn = document.getElementById('closeProductModal');
+        if (closeProductModalBtn) {
+          // Remove old handler
+          closeProductModalBtn.onclick = null;
+          // Add new clean close handler with URL cleanup
+          closeProductModalBtn.onclick = () => cleanCloseProductModal(true);
+        }
+    
+    // Step 10: Setup scroll button and business info
+    LoadingManager.updateProgress(1, 'Completing initialization...');
+    
     // Scroll to top button
     const scrollTopBtn = document.getElementById('scrollTopBtn');
     if (scrollTopBtn) {
@@ -2700,24 +2741,53 @@ async function init() {
       });
       scrollTopBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
     }
-
-    // Business info
-    initializeBusinessInfo(businessInfo);
-
-    // Deals scroll (delayed)
+    
+    // Initialize business info
+    await initializeBusinessInfo();
+    
+    // All steps complete - hide loading overlay
     setTimeout(() => {
-      initDealsScroll();
-      if (deals.length > 3) {
-        startAutoScroll();
-        initAutoScrollPause();
-      }
-    }, 200);
+      LoadingManager.hide();
+    }, 500);
+     BackgroundUpdater.start();
+  } catch (error) {
+    console.error('Initialization error:', error);
+    LoadingManager.updateProgress(1, '⚠️ Error loading some components, but store is ready');
+    setTimeout(() => {
+      LoadingManager.hide();
+    }, 1000);
+  }
+}
 
-    // ---- DONE ----
-    LoadingManager.updateProgress(1, 'Ready!');
-    setTimeout(() => LoadingManager.hide(), 300);
-    BackgroundUpdater.start();
-     const registerForm = document.getElementById('registerForm');
+async function initializeBusinessInfo() {
+  const business = await getBusinessInfo();
+  const shopName = business.shop_name || business.shopName || 'Sucess Technology';
+  
+  document.querySelectorAll('#headerShopName, #headerShopName123').forEach(el => {
+    el.innerHTML = (shopName && shopName.toLowerCase() !== 'Sucess Technology') 
+      ? shopName 
+      : `shop<span class="text-primary">Boss</span>`;
+  });
+  
+  document.getElementById('footerEmail').textContent = business.email;
+  document.getElementById('footerPhone').textContent = business.phone;
+  document.getElementById('footerAddress').textContent = business.address;
+  
+  const facebookLink = document.getElementById('facebookLink');
+  const instagramLink = document.getElementById('instagramLink');
+  const tiktokLink = document.getElementById('tiktokLink');
+  
+  if (facebookLink) facebookLink.style.display = business.facebook ? 'block' : 'none';
+  if (instagramLink) instagramLink.style.display = business.instagram ? 'block' : 'none';
+  if (tiktokLink) tiktokLink.style.display = business.tiktok ? 'block' : 'none';
+  if (business.facebook) facebookLink.href = business.facebook;
+  if (business.instagram) instagramLink.href = business.instagram;
+  if (business.tiktok) tiktokLink.href = business.tiktok;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Attach register/login form handlers
+  const registerForm = document.getElementById('registerForm');
   const loginForm = document.getElementById('loginForm');
   
   if (registerForm) {
@@ -2736,47 +2806,7 @@ async function init() {
   
   // Attach checkout autofill trigger
   document.getElementById('checkoutModal')?.addEventListener('click', autofillCheckoutFromAccount);
-
-  } catch (error) {
-    console.error('Init error:', error);
-    LoadingManager.updateProgress(1, '⚠️ Store ready with limited data');
-    setTimeout(() => LoadingManager.hide(), 800);
-  }
-}
-
-// Helper function for business info (uses cached data)
-async function initializeBusinessInfo(business) {
-  const shopName = business?.shop_name || business?.shopName || 'Sucess Technology';
-  
-  document.querySelectorAll('#headerShopName, #headerShopName123').forEach(el => {
-    el.innerHTML = (shopName && shopName.toLowerCase() !== 'sucess technology') 
-      ? shopName 
-      : `shop<span class="text-primary">Boss</span>`;
-  });
-  
-  if (business) {
-    document.getElementById('footerEmail').textContent = business.email || '';
-    document.getElementById('footerPhone').textContent = business.phone || '';
-    document.getElementById('footerAddress').textContent = business.address || '';
-    
-    const facebookLink = document.getElementById('facebookLink');
-    const instagramLink = document.getElementById('instagramLink');
-    const tiktokLink = document.getElementById('tiktokLink');
-    
-    if (facebookLink) {
-      facebookLink.style.display = business.facebook ? 'block' : 'none';
-      if (business.facebook) facebookLink.href = business.facebook;
-    }
-    if (instagramLink) {
-      instagramLink.style.display = business.instagram ? 'block' : 'none';
-      if (business.instagram) instagramLink.href = business.instagram;
-    }
-    if (tiktokLink) {
-      tiktokLink.style.display = business.tiktok ? 'block' : 'none';
-      if (business.tiktok) tiktokLink.href = business.tiktok;
-    }
-  }
-}
+});
 
 // Initialize everything
 init();

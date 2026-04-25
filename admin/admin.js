@@ -14,7 +14,9 @@ const STORAGE = {
   VIEW_ANALYTICS: 'shop_view_analytics',
   FAILED_SEARCHES: 'shop_failed_searches'
 };
+const DEFAULT_PRODUCTS = [
 
+]; // Define some default products if needed
 const ACCOUNT_STORAGE_KEY = 'shop_customer_accounts';
 let editAddedImages = [];
 let addedImages = [];
@@ -337,6 +339,7 @@ async function renderReviewsList() {
 
   if (allReviews.length === 0) {
     container.innerHTML = '<p class="text-center text-slate-500 py-8">No reviews found.</p>';
+    AdminProgressBar.complete();
     return;
   }
 
@@ -368,6 +371,7 @@ async function renderReviewsList() {
       await deleteReview(productId, reviewId);
     });
   });
+    AdminProgressBar.complete();
 }
 
 async function deleteReview(productId, reviewId) {
@@ -390,7 +394,7 @@ async function deleteReview(productId, reviewId) {
 function populateReviewFilters() {
   const productSelect = document.getElementById('reviewFilterProduct');
   if (!productSelect) return;
-
+  AdminProgressBar.start();
   getProducts().then(products => {
     productSelect.innerHTML = '<option value="all">All Products</option>' +
       products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
@@ -582,26 +586,7 @@ function compressImage(base64String, maxWidth = 800, quality = 0.7) {
   });
 }
 
-async function processImagesForUpload(imageArray) {
-  const processedImages = [];
-  for (const img of imageArray) {
-    try {
-      // Skip processing for remote URLs that might cause CORS issues
-      if (img && (img.startsWith('http://') || img.startsWith('https://'))) {
-        console.log('ℹ️ Remote image, skipping upload processing');
-        processedImages.push(img);
-        continue;
-      }
-      
-      const compressed = await compressImage(img, 800, 0.7);
-      processedImages.push(compressed);
-    } catch (e) {
-      console.warn('Could not process image:', e);
-      processedImages.push(img); // Use original if compression fails
-    }
-  }
-  return processedImages;
-}
+
 // ===============================================
 //             Main Rendering Functions
 // ===============================================
@@ -657,41 +642,7 @@ function updateAddPreviews() {
   updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
 }
 
-document.getElementById('multiImageUpload')?.addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files);
-  
-  for (const file of files) {
-    try {
-      const base64 = await fileToBase64(file);
-      const compressed = await compressImage(base64, 800, 0.7);
-      addedImages.push(compressed);
-    } catch (err) {
-      console.error('Error processing image:', err);
-      showToast('Error processing image');
-    }
-  }
-  
-  updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
-  e.target.value = '';
-});
 
-document.getElementById('editMultiImageUpload')?.addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files);
-  
-  for (const file of files) {
-    try {
-      const base64 = await fileToBase64(file);
-      const compressed = await compressImage(base64, 800, 0.7);
-      editAddedImages.push(compressed);
-    } catch (err) {
-      console.error('Error processing image:', err);
-      showToast('Error processing image');
-    }
-  }
-  
-  updateMultiImagePreviews('editMultiImagePreviews', 'editImagesJsonField', editAddedImages);
-  e.target.value = '';
-});
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -1067,14 +1018,17 @@ function copyToClipboard(text) {
 // ===============================================
 
 async function renderAnalyticsDashboard() {
+
   renderTopSearches();
   renderTopViewed();
   renderFailedSearches();
   renderRecentSearches();
   renderAnalyticsStats();
+
 }
 
 async function renderAnalyticsStats() {
+    AdminProgressBar.start();
   const searchAnalytics = await getSearchAnalytics();
   const viewAnalytics = await getViewAnalytics();
   const failedSearches = await getFailedSearches();
@@ -1085,12 +1039,13 @@ async function renderAnalyticsStats() {
   document.getElementById('totalSearchesStat').textContent = totalSearches;
   document.getElementById('totalViewsStat').textContent = totalViews;
   document.getElementById('failedSearchesStat').textContent = failedSearches.length;
+    AdminProgressBar.complete();
 }
 
 async function renderTopSearches() {
   const container = document.getElementById('topSearchesList');
   if (!container) return;
-  
+    AdminProgressBar.start();
   const analytics = await getSearchAnalytics();
   const sorted = Object.values(analytics)
     .sort((a, b) => b.count - a.count)
@@ -1098,6 +1053,7 @@ async function renderTopSearches() {
   
   if (!sorted.length) {
     container.innerHTML = '<p class="text-slate-400 text-sm">No search data yet</p>';
+    AdminProgressBar.complete();
     return;
   }
   
@@ -1124,12 +1080,13 @@ async function renderTopSearches() {
       </div>
     `;
   }).join('');
+    AdminProgressBar.complete();
 }
 
 async function renderTopViewed() {
   const container = document.getElementById('topViewedList');
   if (!container) return;
-  
+    AdminProgressBar.start();
   const analytics = await getViewAnalytics();
   const products = await getProducts();
   
@@ -1148,6 +1105,7 @@ async function renderTopViewed() {
   
   if (!sorted.length) {
     container.innerHTML = '<p class="text-slate-400 text-sm">No view data yet</p>';
+    AdminProgressBar.complete();
     return;
   }
   
@@ -1168,17 +1126,19 @@ async function renderTopViewed() {
       </div>
     </div>
   `).join('');
+    AdminProgressBar.complete();
 }
 
 async function renderFailedSearches() {
   const container = document.getElementById('failedSearchesList');
   if (!container) return;
-  
+    AdminProgressBar.start();
   const failedSearches = await getFailedSearches();
   const sorted = failedSearches.sort((a, b) => b.count - a.count).slice(0, 10);
   
   if (!sorted.length) {
     container.innerHTML = '<p class="text-slate-400 text-sm">No failed searches 🎉</p>';
+      AdminProgressBar.complete();
     return;
   }
   
@@ -1197,12 +1157,13 @@ async function renderFailedSearches() {
       </button>
     </div>
   `).join('');
+    AdminProgressBar.complete();
 }
 
 async function renderRecentSearches() {
   const container = document.getElementById('recentSearchesList');
   if (!container) return;
-  
+    AdminProgressBar.start();
   const analytics = await getSearchAnalytics();
   const sorted = Object.values(analytics)
     .sort((a, b) => new Date(b.lastSearched) - new Date(a.lastSearched))
@@ -1210,6 +1171,7 @@ async function renderRecentSearches() {
   
   if (!sorted.length) {
     container.innerHTML = '<p class="text-slate-400 text-sm">No recent activity</p>';
+    AdminProgressBar.complete();
     return;
   }
   
@@ -1225,6 +1187,7 @@ async function renderRecentSearches() {
       </div>
     </div>
   `).join('');
+    AdminProgressBar.complete();
 }
 
 function timeAgo(dateString) {
@@ -1385,6 +1348,7 @@ document.getElementById('checkoutForm').addEventListener('submit', async (e) => 
 // ===============================================
 
 async function renderAnalytics() {
+    AdminProgressBar.start();
   let products = await getProducts();
   let orders = await getOrders();
 
@@ -1406,9 +1370,11 @@ async function renderAnalytics() {
         </div>
       `).join('')
     : '<div>No orders yet</div>';
+    AdminProgressBar.complete();
 }
 
 async function renderProductListAdmin() {
+  AdminProgressBar.start();
   let products = await getProducts();
   if (adminProductSearch.trim()) {
     const q = adminProductSearch.trim().toLowerCase();
@@ -1418,15 +1384,19 @@ async function renderProductListAdmin() {
   
   if (!products.length) {
     document.getElementById('productsList').innerHTML = '<p class="col-span-full text-center text-slate-500 py-6">No products found</p>';
+    AdminProgressBar.complete();
     return;
   }
 
   document.getElementById('productsList').innerHTML = products.map(p => {
     const dealDiscount = dealsMap.get(p.id);
     const hasDeal = dealDiscount !== undefined;
+    // FIX: Ensure originalPrice is always a valid number
+    const originalPrice = Number(p.price) || 0;
     
     return `
-      <div class="border rounded-2xl p-4 shadow-sm relative ${hasDeal ? 'border-primary border-2' : ''}">
+      <div class="border rounded-2xl p-4 shadow-sm relative ${hasDeal ? 'border-primary border-2' : ''}" 
+           data-original-price="${originalPrice}" data-product-id="${p.id}">
         ${hasDeal ? '<div class="absolute -top-2 -right-2 bg-primary text-white px-2 py-1 rounded-full text-xs font-bold z-10">🔥 DEAL</div>' : ''}
         <img
           src="${p.image || 'https://placehold.co/600x400'}"
@@ -1439,13 +1409,13 @@ async function renderProductListAdmin() {
         <div class="flex items-start justify-between gap-3">
           <div>
             <strong class="block">${p.name}</strong>
-            <span class="text-sm text-slate-600">
+            <span class="text-sm text-slate-600" id="priceDisplay-${p.id}">
               ${hasDeal ? 
-                `<span class="line-through text-gray-400">FCFA${p.price}</span> 
-                 <span class="text-primary font-bold">FCFA${(p.price * (1 - dealDiscount/100)).toFixed(2)}</span>
-                 <span class="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-1">-${dealDiscount}%</span>` : 
-                `FCFA${p.price}`
-              } · stock: ${p.stock} ${p.isHot ? '🔥' : ''} ${p.isNew ? '✨' : ''}
+                `<span class="line-through text-gray-400">FCFA ${originalPrice.toFixed(2)}</span> 
+                 <span class="discount-price text-primary font-bold">FCFA ${(originalPrice * (1 - dealDiscount/100)).toFixed(2)}</span>
+                 <span class="discount-badge text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-1">-${dealDiscount}%</span>` : 
+                `FCFA ${originalPrice.toFixed(2)}`
+              } · stock: ${p.stock || 0} ${p.isHot ? '🔥' : ''} ${p.isNew ? '✨' : ''}
             </span>
           </div>
           <div class="shrink-0">
@@ -1463,6 +1433,7 @@ async function renderProductListAdmin() {
             placeholder="% off"
             class="deal-discount-input border rounded px-2 py-1 text-sm w-24"
             data-id="${p.id}"
+            oninput="updateDealPreview(this)"
           />
           <button class="set-deal-btn text-xs bg-primary text-white px-3 py-1 rounded-full" data-id="${p.id}">
             Save Deal
@@ -1476,6 +1447,7 @@ async function renderProductListAdmin() {
     `;
   }).join('');
 
+  // Attach other button events
   document.querySelectorAll('.edit-product-btn').forEach(btn =>
     btn.addEventListener('click', () => openEditProduct(btn.dataset.id))
   );
@@ -1484,49 +1456,43 @@ async function renderProductListAdmin() {
     img.addEventListener('click', () => openEditProduct(img.dataset.id))
   );
 
-document.querySelectorAll('.delete-product-btn').forEach(btn =>
-  btn.addEventListener('click', async () => {
-    if (confirm('Delete this product? This cannot be undone.')) {
-      const productId = btn.dataset.id;
-      
-           AdminProgressBar.start();
-
-      try {
-        const client = getSupabase();
-        if (client) {
-          const { error } = await client
-            .from('products')
-            .delete()
-            .eq('id', productId);
-          
-          if (error) {
-            console.error('❌ Error deleting from Supabase:', error.message);
+  document.querySelectorAll('.delete-product-btn').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      if (confirm('Delete this product? This cannot be undone.')) {
+        const productId = btn.dataset.id;
+        AdminProgressBar.start();
+        try {
+          const client = getSupabase();
+          if (client) {
+            const { error } = await client
+              .from('products')
+              .delete()
+              .eq('id', productId);
+            if (error) {
+              console.error('❌ Error deleting from Supabase:', error.message);
               AdminProgressBar.error();
-          } else {
-            console.log('✅ Product deleted from Supabase:', productId);
-            
+            } else {
+              console.log('✅ Product deleted from Supabase:', productId);
+            }
           }
+        } catch (err) {
+          console.warn('⚠️ Could not delete from Supabase:', err);
+          AdminProgressBar.error();
         }
-      } catch (err) {
-        console.warn('⚠️ Could not delete from Supabase:', err);
-         AdminProgressBar.error();
+        let prods = (await getProducts()).filter(p => p.id !== productId);
+        let featured = await getFeaturedIds();
+        if (featured.includes(productId)) {
+          await setFeaturedIds(featured.filter(id => id !== productId));
+        }
+        await removeDealForProduct(productId, true);
+        localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
+        GLOBAL_PRODUCTS = prods;
+        AdminProgressBar.complete();
+        showToast('Deleted');
+        refreshAll();
       }
-      
-      // Remove from local
-      let prods = (await getProducts()).filter(p => p.id !== productId);
-      let featured = await getFeaturedIds();
-      if (featured.includes(productId)) {
-        await setFeaturedIds(featured.filter(id => id !== productId));
-      }
-      await removeDealForProduct(productId, true);
-      localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
-      GLOBAL_PRODUCTS = prods;
-         AdminProgressBar.complete();
-      showToast('Deleted');
-      refreshAll();
-    }
-  })
-);
+    })
+  );
 
   document.querySelectorAll('.set-deal-btn').forEach(btn =>
     btn.addEventListener('click', async () => {
@@ -1542,7 +1508,77 @@ document.querySelectorAll('.delete-product-btn').forEach(btn =>
       await removeDealForProduct(btn.dataset.id);
     })
   );
+    AdminProgressBar.complete();
 }
+
+// Global function for live discount preview
+window.updateDealPreview = function(input) {
+  const productId = input.dataset.id;
+  const container = document.querySelector(`[data-product-id="${productId}"]`);
+  const priceDisplay = document.getElementById(`priceDisplay-${productId}`);
+  
+  // Safety checks
+  if (!container || !priceDisplay) {
+    console.warn('⚠️ Missing elements for deal preview:', productId);
+    return;
+  }
+  
+  // Get original price from data attribute
+  let originalPrice = parseFloat(container.dataset.originalPrice);
+  
+  // If still NaN, try to get it from the displayed text
+  if (isNaN(originalPrice)) {
+    const priceMatch = priceDisplay.textContent.match(/FCFA\s*([\d,]+\.?\d*)/);
+    if (priceMatch) {
+      originalPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+    }
+  }
+  
+  // Final fallback - if all fails, return
+  if (isNaN(originalPrice) || originalPrice <= 0) {
+    console.warn('⚠️ Could not determine original price for product:', productId);
+    return;
+  }
+  
+  // Extract stock info from current display
+  const stockMatch = priceDisplay.innerHTML.match(/stock:\s*(\d+)/);
+  const hotMatch = priceDisplay.innerHTML.includes('🔥') ? ' 🔥' : '';
+  const newMatch = priceDisplay.innerHTML.includes('✨') ? ' ✨' : '';
+  const stockText = stockMatch ? ` · stock: ${stockMatch[1]}${hotMatch}${newMatch}` : '';
+  
+  const discount = parseFloat(input.value);
+  const minDiscount = parseFloat(input.min) || 1;
+  const maxDiscount = parseFloat(input.max) || 95;
+
+  // If discount is invalid, out of range, or empty - revert to original price display
+  if (isNaN(discount) || discount < minDiscount || discount > maxDiscount || input.value === '') {
+    priceDisplay.innerHTML = `FCFA ${originalPrice.toFixed(2)}${stockText}`;
+    // Remove deal styling from container
+    container.classList.remove('border-primary', 'border-2');
+    const existingDealBadge = container.querySelector('.absolute.-top-2.-right-2');
+    if (existingDealBadge) existingDealBadge.remove();
+    return;
+  }
+
+  // Calculate and display discounted price
+  const discountedPrice = originalPrice * (1 - discount / 100);
+  
+  // Add deal styling to container
+  container.classList.add('border-primary', 'border-2');
+  if (!container.querySelector('.absolute.-top-2.-right-2')) {
+    const dealBadge = document.createElement('div');
+    dealBadge.className = 'absolute -top-2 -right-2 bg-primary text-white px-2 py-1 rounded-full text-xs font-bold z-10';
+    dealBadge.textContent = '🔥 DEAL';
+    container.appendChild(dealBadge);
+  }
+  
+  // Update the price display with discount info
+  priceDisplay.innerHTML = `
+    <span class="line-through text-gray-400">FCFA ${originalPrice.toFixed(2)}</span> 
+    <span class="discount-price text-primary font-bold">FCFA ${discountedPrice.toFixed(2)}</span>
+    <span class="discount-badge text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-1">-${discount}%</span>${stockText}
+  `;
+};
 
 async function renderAdminSearchSuggestions(query = "") {
   const suggestionsBox = document.getElementById('productListSearchSuggestions');
@@ -1699,30 +1735,56 @@ function initAddProductLivePreview() {
 document.getElementById('editForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!window.editingId) return;
-    AdminProgressBar.start();
+  AdminProgressBar.start();
 
   let fd = new FormData(e.target);
   
-  let allImages = [...editAddedImages];
-  // Get image from hidden field (upload) or URL input
-const mainImage = document.getElementById('editMainImageField')?.value || 
+  // Check if there's a new image to upload from the file input
+  const editImageUpload = document.getElementById('editImageUpload');
+  let mainImage = document.getElementById('editMainImageField')?.value || 
                   fd.get('imageUrl') || 
                   fd.get('image') || 
                   'https://placehold.co/600x400';
   
+  // If a new file was selected for upload
+  if (editImageUpload && editImageUpload.files.length > 0) {
+    const file = editImageUpload.files[0];
+    try {
+      const base64 = await fileToBase64(file);
+      const compressed = await compressImage(base64, 800, 0.7);
+      const uploadedUrl = await uploadBase64ToStorage(compressed, 'products');
+      if (uploadedUrl) {
+        mainImage = uploadedUrl;
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not upload new main image:', err);
+    }
+  }
+  
+  // Process additional images - upload any new ones to storage
+  let allImages = [...editAddedImages];
+  
+
+  // Add main image if not already in array
   if (allImages.length === 0) {
     allImages = [mainImage || 'https://placehold.co/600x400'];
   } else if (mainImage && !allImages.includes(mainImage)) {
     allImages.unshift(mainImage);
   }
   
+  // Add URL images from the comma-separated field
   const urlInput = fd.get('imageUrls');
   if (urlInput) {
     let urls = urlInput.split(',').map(u => u.trim()).filter(u => u);
     allImages = [...allImages, ...urls];
   }
   
-  const processedImages = await processImagesForUpload(allImages);
+  // Remove duplicates
+  allImages = [...new Set(allImages)];
+  
+  // Filter out any base64 images (shouldn't have any, but just in case)
+  allImages = allImages.filter(img => !img.startsWith('data:'));
+  
   const validVariants = editVariantsList.filter(v => v.type.trim() && v.values.length);
 
   let updated = {
@@ -1733,8 +1795,8 @@ const mainImage = document.getElementById('editMainImageField')?.value ||
     description: fd.get('description'),
     stock: Number(fd.get('stock')),
     variants: validVariants,
-    image: processedImages[0] || 'https://placehold.co/600x400',
-    images: processedImages,
+    image: allImages[0] || 'https://placehold.co/600x400',
+    images: allImages,
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand'),
@@ -1754,14 +1816,14 @@ const mainImage = document.getElementById('editMainImageField')?.value ||
       
       if (error) {
         console.error('❌ Error updating in Supabase:', error.message);
-           AdminProgressBar.error();
+        AdminProgressBar.error();
       } else {
         console.log('✅ Product updated in Supabase!');
       }
     }
   } catch (err) {
     console.warn('⚠️ Could not update Supabase:', err.message);
-     AdminProgressBar.error();
+    AdminProgressBar.error();
   }
 
   // Always update localStorage
@@ -1770,13 +1832,101 @@ const mainImage = document.getElementById('editMainImageField')?.value ||
   if (idx !== -1) prods[idx] = updated;
   localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
   GLOBAL_PRODUCTS = prods;
-   AdminProgressBar.complete();
+  
+  AdminProgressBar.complete();
   closeModal('editModal');
   showToast('Product updated');
   refreshAll();
 });
 
 // Add Product Form Submit with Loading States
+// ===============================================
+//        IMAGE UPLOAD HANDLING (STORAGE)
+// ===============================================
+
+// Upload main image from file input
+async function handleMainImageUpload(fileInput, previewImgId, hiddenFieldId) {
+  const file = fileInput.files[0];
+  if (!file) return null;
+  
+  try {
+    // Compress the image first
+    const base64 = await fileToBase64(file);
+    const compressed = await compressImage(base64, 800, 0.7);
+    
+    // Upload compressed image to Supabase Storage
+    const imageUrl = await uploadBase64ToStorage(compressed, 'products');
+    
+    if (imageUrl) {
+      // Update preview
+      const previewImg = document.getElementById(previewImgId);
+      if (previewImg) {
+        previewImg.src = imageUrl;
+        previewImg.classList.remove('hidden');
+      }
+      
+      // Update hidden field
+      const hiddenField = document.getElementById(hiddenFieldId);
+      if (hiddenField) hiddenField.value = imageUrl;
+      
+      // Hide placeholder
+      const placeholder = document.getElementById('mainImagePlaceholder');
+      if (placeholder) placeholder.classList.add('hidden');
+      
+      console.log('✅ Image uploaded to storage:', imageUrl);
+      return imageUrl;
+    }
+  } catch (err) {
+    console.error('Error uploading main image:', err);
+    showToast('Error uploading image');
+  }
+  
+  return null;
+}
+
+// Upload additional images from multi-file input
+async function handleMultiImageUpload(files, previewContainerId, imagesArray) {
+  for (const file of files) {
+    try {
+      const base64 = await fileToBase64(file);
+      const compressed = await compressImage(base64, 800, 0.7);
+      
+      // Upload to Supabase Storage
+      const imageUrl = await uploadBase64ToStorage(compressed, 'products');
+      
+      if (imageUrl) {
+        imagesArray.push(imageUrl);
+      }
+    } catch (err) {
+      console.error('Error processing image:', err);
+    }
+  }
+  
+  updateMultiImagePreviews(previewContainerId, 'imagesJsonField', imagesArray);
+}
+
+// Update the existing image upload event listeners
+document.getElementById('imageUpload')?.addEventListener('change', async (e) => {
+  await handleMainImageUpload(e.target, 'mainImagePreviewImg', 'mainImageField');
+});
+
+document.getElementById('editImageUpload')?.addEventListener('change', async (e) => {
+  await handleMainImageUpload(e.target, 'editMainImagePreviewImg', 'editMainImageField');
+});
+
+document.getElementById('multiImageUpload')?.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  await handleMultiImageUpload(files, 'multiImagePreviews', addedImages);
+  e.target.value = '';
+});
+
+document.getElementById('editMultiImageUpload')?.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  await handleMultiImageUpload(files, 'editMultiImagePreviews', editAddedImages);
+  e.target.value = '';
+});
+
+// Update add product form to use storage URLs instead of base64
 document.getElementById('adminForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   
@@ -1793,25 +1943,34 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   btnLoading.classList.remove('hidden');
   btnSuccess.classList.add('hidden');
   submitBtn.disabled = true;
-  statusBadge.textContent = 'Saving...';
+  statusBadge.textContent = 'Uploading...';
   statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-600 animate-pulse';
   
   let fd = new FormData(e.target);
   
-  // Get image from hidden field (upload) or URL input
+  // Get main image from storage upload or URL
   const mainImage = document.getElementById('mainImageField')?.value || 
                     fd.get('imageUrl') || 
-                    fd.get('image') || 
                     'https://placehold.co/600x400';
   
+  // All images are now URLs (not base64) - much smaller!
   let allImages = [...addedImages];
   if (allImages.length === 0) {
     allImages = [mainImage];
-  } else if (!allImages.includes(mainImage)) {
+  } else if (mainImage && !allImages.includes(mainImage)) {
     allImages.unshift(mainImage);
   }
   
-  const processedImages = await processImagesForUpload(allImages);
+  // Add URL images
+  const urlInput = fd.get('imageUrls');
+  if (urlInput) {
+    let urls = urlInput.split(',').map(u => u.trim()).filter(u => u);
+    allImages = [...allImages, ...urls];
+  }
+  
+  // Remove duplicates
+  allImages = [...new Set(allImages)];
+  
   const validVariants = variantsList.filter(v => v.type.trim() && v.values.length);
   
   let newProd = {
@@ -1821,8 +1980,8 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     category: fd.get('category'),
     description: fd.get('description') || '',
     stock: Number(fd.get('stock')),
-    image: processedImages[0] || 'https://placehold.co/600x400',
-    images: processedImages,
+    image: allImages[0] || 'https://placehold.co/600x400',
+    images: allImages, // URLs instead of base64!
     isHot: fd.get('isHot') === 'on',
     isNew: fd.get('isNew') === 'on',
     brand: fd.get('brand') || '',
@@ -1833,7 +1992,9 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     deliveryEstimate: fd.get('deliveryEstimate') || ''
   };
 
-  // Try Supabase first
+  statusBadge.textContent = 'Saving...';
+  
+  // Save to Supabase (now with small URL strings instead of huge base64)
   let savedToCloud = false;
   try {
     const result = await addProductToDB(newProd);
@@ -1844,44 +2005,38 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     console.warn('Supabase save failed:', err);
   }
 
-  // Always save to localStorage as backup
+  // Save to localStorage as backup
   let prods = await getProducts();
   prods.unshift(newProd);
   localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(prods));
   GLOBAL_PRODUCTS = prods;
 
-  // Show success state
+  // Show success
   btnLoading.classList.add('hidden');
   btnSuccess.classList.remove('hidden');
   statusBadge.textContent = '✅ Added';
   statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-green-100 text-green-600';
   
-  // Show success message
   successProductName.textContent = `"${newProd.name}" has been added to your store.`;
   successMsg.classList.remove('hidden');
   successMsg.style.animation = 'slideDown 0.5s ease';
 
   showToast(savedToCloud ? '✅ Product added to cloud!' : '⚠️ Product saved locally');
 
-  // Reset everything after delay
+  // Reset form after delay
   setTimeout(() => {
-    // Reset form
     e.target.reset();
     addedImages = [];
     variantsList = [];
-    
-    // Reset image previews
     updateMultiImagePreviews('multiImagePreviews', 'imagesJsonField', addedImages);
     renderVariantsUI('variantsContainer', variantsList);
     
-    // Reset main image
     const mainPreviewImg = document.getElementById('mainImagePreviewImg');
     const mainPlaceholder = document.getElementById('mainImagePlaceholder');
     if (mainPreviewImg) mainPreviewImg.classList.add('hidden');
     if (mainPlaceholder) mainPlaceholder.classList.remove('hidden');
     document.getElementById('mainImageField').value = '';
     
-    // Reset preview
     document.getElementById('previewName').textContent = 'Product Name';
     document.getElementById('previewPrice').textContent = 'FCFA 0.00';
     document.getElementById('previewStock').textContent = 'Stock: 0';
@@ -1890,7 +2045,6 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     document.getElementById('previewHotBadge').classList.add('hidden');
     document.getElementById('previewNewBadge').classList.add('hidden');
     
-    // Reset button
     btnSuccess.classList.add('hidden');
     btnText.classList.remove('hidden');
     btnLoading.classList.add('hidden');
@@ -1898,13 +2052,11 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
     statusBadge.textContent = 'Ready';
     statusBadge.className = 'text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-500';
     
-    // Hide success message
     successMsg.style.animation = 'slideUp 0.3s ease forwards';
     setTimeout(() => {
       successMsg.classList.add('hidden');
       successMsg.style.animation = '';
     }, 300);
-    
   }, 2500);
 
   refreshAll();
@@ -1953,65 +2105,9 @@ async function loadAdminFromSupabase() {
   return null;
 }
 
-document.getElementById('imageUpload')?.addEventListener('change', (e) => {
-  let file = e.target.files[0];
-  if (file) {
-    let reader = new FileReader();
-    reader.onload = ev => {
-      document.querySelector('#adminForm input[name="image"]').value = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  }
-});
-// Main image upload for Add Product form
-document.getElementById('imageUpload')?.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    try {
-      const base64 = await fileToBase64(file);
-      const compressed = await compressImage(base64, 800, 0.7);
-      
-      // Set the main image field
-      document.getElementById('mainImageField').value = compressed;
-      
-      // Show preview
-      const previewImg = document.getElementById('mainImagePreviewImg');
-      previewImg.src = compressed;
-      previewImg.classList.remove('hidden');
-      
-      console.log('✅ Main image uploaded and compressed');
-    } catch (err) {
-      console.error('Error processing main image:', err);
-      showToast('Error processing image');
-    }
-  }
-});
-
-// Main image upload for Edit Product form
-document.getElementById('editImageUpload')?.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    try {
-      const base64 = await fileToBase64(file);
-      const compressed = await compressImage(base64, 800, 0.7);
-      
-      // Set the main image field
-      document.getElementById('editMainImageField').value = compressed;
-      
-      // Show preview
-      const previewImg = document.getElementById('editMainImagePreviewImg');
-      previewImg.src = compressed;
-      previewImg.classList.remove('hidden');
-      
-      console.log('✅ Main image uploaded and compressed for edit');
-    } catch (err) {
-      console.error('Error processing main image:', err);
-      showToast('Error processing image');
-    }
-  }
-});
 
 async function populateFeaturedSelect() {
+  AdminProgressBar.start();
   let products = await getProducts();
   let featuredIds = await getFeaturedIds();
   let sel = document.getElementById('featuredSelect');
@@ -2020,6 +2116,8 @@ async function populateFeaturedSelect() {
   sel.innerHTML = available.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   if (available.length === 0) {
     sel.innerHTML = '<option value="">All items are featured</option>';
+      AdminProgressBar.complete();
+    return;
   }
 
   let listContainer = document.getElementById('featuredAdminList');
@@ -2037,6 +2135,7 @@ async function populateFeaturedSelect() {
         </div>
       `).join('')
     : '<p class="text-center text-slate-400 text-sm py-4">No items set as featured.</p>';
+    AdminProgressBar.complete();
 }
 
 document.getElementById('addFeaturedBtn')?.addEventListener('click', () => {
@@ -2084,6 +2183,7 @@ document.getElementById('resetDefaultBtn')?.addEventListener('click', async () =
 });
 
 async function loadBusinessForm() {
+    AdminProgressBar.start();
   let info = await getBusinessInfo();
   let form = document.getElementById('businessForm');
   if (form) {
@@ -2095,7 +2195,7 @@ async function loadBusinessForm() {
     form.instagram.value = info.instagram || '';
     form.tiktok.value = info.tiktok || '';
   }
-  
+  AdminProgressBar.complete();
   const adminHeader = document.getElementById('adminHeaderShopName');
   if (adminHeader) {
     if (info.shopName && info.shopName.toLowerCase() !== 'Sucess Technology') {
@@ -2118,6 +2218,7 @@ async function loadBusinessForm() {
 // ==========================================
 
 async function loadContactForm() {
+    AdminProgressBar.start();
   let contact = await getContactInfo();
   let form = document.getElementById('contactForm');
   if (form) {
@@ -2165,6 +2266,7 @@ async function updateContactPreview() {
     previewImg.classList.add('hidden');
     if (previewPlaceholder) previewPlaceholder.classList.remove('hidden');
   }
+  AdminProgressBar.complete();
 }
 
 document.getElementById('contactForm')?.addEventListener('submit', async (e) => {
@@ -2378,6 +2480,7 @@ async function trackProductView(productId) {
 async function renderOrderList() {
   const container = document.getElementById('ordersListContainer');
   if (!container) return;
+  AdminProgressBar.start();
   
   let orders = await getOrders();
   const searchQuery = document.getElementById('orderSearchInput')?.value.trim().toLowerCase() || '';
@@ -2399,6 +2502,7 @@ async function renderOrderList() {
   
   if (!orders.length) {
     container.innerHTML = '<p class="text-center text-slate-400 py-8">No orders found.</p>';
+      AdminProgressBar.complete();
     return;
   }
   
@@ -2503,6 +2607,7 @@ async function renderOrderList() {
       </div>
     `;
   }).join('');
+    AdminProgressBar.complete();
 }
 
 async function updateOrderStatus(orderId, newStatus) {
@@ -2577,7 +2682,7 @@ window.copyTrackingLinkAdmin = function(orderId, btn) {
 async function renderCustomerList() {
   const container = document.getElementById('customerListContainer');
   if (!container) return;
-  
+    AdminProgressBar.start();
   let customers = await getCustomers();
   const searchQuery = document.getElementById('customerSearchInput')?.value?.trim()?.toLowerCase() || '';
   const orders = await getOrders();
@@ -2594,6 +2699,7 @@ async function renderCustomerList() {
   
   if (!customers.length) {
     container.innerHTML = '<p class="text-center text-slate-400 py-8">No customers found.</p>';
+      AdminProgressBar.complete();
     return;
   }
   
@@ -2702,6 +2808,7 @@ async function renderCustomerList() {
       </div>
     `;
   }).join('');
+    AdminProgressBar.complete();
 }
 
 function updateCustomerStats(customers, orders) {
@@ -2769,14 +2876,33 @@ async function saveDealForProduct(productId, discount) {
 }
 
 async function removeDealForProduct(productId, silent = false) {
-  const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
-  await setDealsOfToday(deals);
   AdminProgressBar.start();
+  
+  // Get current deals and filter out the one to remove
+  const deals = (await getDealsOfToday()).filter(d => d.id !== productId);
+  
+  // Save the filtered deals back
+  await setDealsOfToday(deals);
+  
+  // Also delete from Supabase directly to be safe
+  try {
+    const client = getSupabase();
+    if (client) {
+      await client
+        .from('deals')
+        .delete()
+        .eq('product_id', productId);
+    }
+  } catch (err) {
+    console.warn('⚠️ Could not delete deal from Supabase:', err);
+  }
+  
+  AdminProgressBar.complete();
+  
   if (!silent) {
     showToast("Deal removed");
     refreshAll();
   }
-  AdminProgressBar.complete();
 }
 
 async function toggleFeatured(id) {

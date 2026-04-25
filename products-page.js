@@ -30,7 +30,7 @@ const STORAGE = {
       setTimeout(initialize, 100);
       return;
     }
-    
+    ActionProgressBar.start();
     await renderAllProducts();
     await buildCategoryFilters();
     initSearch();
@@ -49,6 +49,7 @@ const STORAGE = {
         await updateCartCount();
       };
     }
+       ActionProgressBar.complete();
   }
   
   async function handleProductFromUrl() {

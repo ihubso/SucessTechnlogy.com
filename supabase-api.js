@@ -791,3 +791,131 @@ async function saveCustomersToDB(customers) {
     console.error('❌ Error:', err.message);
   }
 }
+
+
+
+// ===============================================
+//        SUPABASE STORAGE - IMAGE UPLOAD
+// ===============================================
+
+// Upload a single image file to Supabase Storage
+async function uploadImageToStorage(file, folder = 'products') {
+  const client = getSupabase();
+  if (!client) return null;
+  
+  try {
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substr(2, 8)}.jpg`;
+    
+    const { data, error } = await client
+      .storage
+      .from('product-images')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'image/jpeg'
+      });
+    
+    if (error) {
+      console.error('❌ Error uploading image:', error.message);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = client
+      .storage
+      .from('product-images')
+      .getPublicUrl(fileName);
+    
+    console.log('✅ Image uploaded:', publicUrl);
+    return publicUrl;
+  } catch (err) {
+    console.error('❌ Upload error:', err.message);
+    return null;
+  }
+}
+
+// Upload base64 image to Supabase Storage
+async function uploadBase64ToStorage(base64String, folder = 'products') {
+  const client = getSupabase();
+  if (!client) return null;
+  
+  try {
+    // Convert base64 to blob
+    const response = await fetch(base64String);
+    const blob = await response.blob();
+    
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substr(2, 8)}.jpg`;
+    
+    const { data, error } = await client
+      .storage
+      .from('product-images')
+      .upload(fileName, blob, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: 'image/jpeg'
+      });
+    
+    if (error) {
+      console.error('❌ Error uploading image:', error.message);
+      return null;
+    }
+    
+    const { data: { publicUrl } } = client
+      .storage
+      .from('product-images')
+      .getPublicUrl(fileName);
+    
+    console.log('✅ Image uploaded:', publicUrl);
+    return publicUrl;
+  } catch (err) {
+    console.error('❌ Upload error:', err.message);
+    return null;
+  }
+}
+
+// Upload multiple images and return URLs
+async function uploadMultipleImages(files, folder = 'products') {
+  const urls = [];
+  
+  for (const file of files) {
+    const url = await uploadImageToStorage(file, folder);
+    if (url) urls.push(url);
+  }
+  
+  return urls;
+}
+
+// Delete an image from storage
+async function deleteImageFromStorage(imageUrl) {
+  const client = getSupabase();
+  if (!client) return false;
+  
+  try {
+    // Extract file path from URL
+    const url = new URL(imageUrl);
+    const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/product-images\/(.+)/);
+    
+    if (!pathMatch) {
+      console.warn('⚠️ Could not extract file path from URL:', imageUrl);
+      return false;
+    }
+    
+    const filePath = pathMatch[1];
+    
+    const { error } = await client
+      .storage
+      .from('product-images')
+      .remove([filePath]);
+    
+    if (error) {
+      console.error('❌ Error deleting image:', error.message);
+      return false;
+    }
+    
+    console.log('✅ Image deleted from storage:', filePath);
+    return true;
+  } catch (err) {
+    console.error('❌ Delete error:', err.message);
+    return false;
+  }
+}

@@ -619,6 +619,7 @@ async function renderWishlistModal() {
 window.currentModalProductId = null;
 
 async function openProductDetail(id) {
+     ActionProgressBar.start();
   window.currentModalProductId = id;
   addToRecentlyViewed(id);
   await trackProductView(id);
@@ -628,76 +629,263 @@ async function openProductDetail(id) {
   setTimeout(() => scrollModalToTop(), 100);
 }
 
+// ===============================================
+//        BROWSER URL MANAGEMENT
+// ===============================================
+function updateBrowserUrl(productId) {
+  if (!productId) return;
+  
+  const baseUrl = window.location.origin + window.location.pathname;
+  const newUrl = `${baseUrl}?product=${productId}`;
+  
+  // Update URL without reloading the page
+  if (window.history && window.history.pushState) {
+    window.history.pushState({ productId: productId }, '', newUrl);
+  }
+}
+
+function cleanBrowserUrl() {
+  const baseUrl = window.location.origin + window.location.pathname;
+  
+  // Remove product parameter from URL
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState({}, document.title, baseUrl);
+  }
+}
+
+// Handle browser back/forward buttons
+window.addEventListener('popstate', (event) => {
+  const modal = document.getElementById('productModal');
+  
+  if (event.state && event.state.productId) {
+    // User navigated to a product URL
+    const productId = event.state.productId;
+    if (modal && modal.classList.contains('hidden')) {
+      openProductDetail(productId);
+    }
+  } else {
+    // User navigated back - close modal if open
+    if (modal && !modal.classList.contains('hidden')) {
+      cleanCloseProductModal(false); // Don't update URL since browser already changed it
+    }
+  }
+});
+// Update the cleanCloseProductModal function
 async function cleanCloseProductModal(updateUrl = true) {
   const modal = document.getElementById('productModal');
   const modalInner = document.getElementById('productDetailInner');
+  
   if (!modal || !modalInner) return;
   
+  // Add closing animation
   modalInner.style.opacity = '0';
   modalInner.style.transform = 'scale(0.95)';
   modalInner.style.transition = 'all 0.3s ease';
   
   setTimeout(() => {
+    // Clear the modal content
     modalInner.innerHTML = '';
     modalInner.style.opacity = '1';
     modalInner.style.transform = 'scale(1)';
+    
+    // Reset modal-related state
     window.currentModalProductId = null;
     window.currentModalDealPrice = null;
     window.currentModalVariants = {};
+    
+    // Reset quantity input
     const qtyInput = document.getElementById('modalQtyInput');
     if (qtyInput) qtyInput.value = 1;
+    
+    // Hide the modal
     modal.classList.add('hidden');
-    if (updateUrl) cleanBrowserUrl();
+    
+    // Clean up URL if requested
+    if (updateUrl) {
+      cleanBrowserUrl();
+    }
   }, 200);
 }
 
-async function renderProductDetailModal(id) {
-  const p = (await getProducts()).find(pr => pr.id === id);
-  if (!p) { showToast("Product not found"); return; }
+// ===============================================
+//        PRODUCT NOT FOUND HANDLER
+// ===============================================
+function showProductNotFound(id) {
+  const modalInner = document.getElementById('productDetailInner');
+  if (!modalInner) return;
+  
+  modalInner.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-16 px-4">
+      <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6 animate-pulse">
+        <i class="fas fa-box-open text-5xl text-gray-400"></i>
+      </div>
+      <h2 class="text-2xl font-bold text-gray-800 mb-2">Product Not Found</h2>
+      <p class="text-gray-500 mb-2 text-center">
+        The product <span class="font-mono font-semibold text-gray-700">(${id})</span> could not be found.
+      </p>
+      <p class="text-sm text-gray-400 mb-8 text-center">
+        It may have been removed or the link might be incorrect.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <button onclick="closeModal('productModal')" 
+                class="px-6 py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primaryHover transition-all">
+          <i class="fas fa-times mr-2"></i> Close
+        </button>
+        <button onclick="closeModal('productModal'); window.scrollTo({top: 0, behavior: 'smooth'});" 
+                class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-all">
+          <i class="fas fa-home mr-2"></i> Browse Products
+        </button>
+        <button onclick="closeModal('productModal'); document.getElementById('searchInput')?.focus();" 
+                class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-all">
+          <i class="fas fa-search mr-2"></i> Search
+        </button>
+      </div>
+    </div>
+  `;
+  
+  // Auto close after 10 seconds
+  setTimeout(() => {
+    const productModal = document.getElementById('productModal');
+    if (productModal && !productModal.classList.contains('hidden') && 
+        document.getElementById('productDetailInner')?.innerHTML.includes('Product Not Found')) {
+      closeModal('productModal');
+      showToast('Product not available - returned to store');
+    }
+  }, 10000);
+}
 
-  const avgRating = await getAverageRating(id);
-  const reviews = await getProductReviews(id);
+// ===============================================
+//        MODAL LOADING PROGRESS BAR
+// ===============================================
+function showModalLoading(modalInner) {
+  modalInner.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-12">
+      <div class="w-full max-w-md mb-8">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-sm font-medium text-gray-600">Loading product details...</span>
+          <span class="text-sm font-semibold text-primary" id="modalProgressPercent">0%</span>
+        </div>
+        <div class="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div id="modalProgressBar" 
+               class="absolute top-0 left-0 h-full bg-gradient-to-r from-primary via-red-400 to-primary bg-[length:200%_100%] animate-gradient-x rounded-full transition-all duration-500 ease-out"
+               style="width: 0%">
+          </div>
+        </div>
+        <div class="flex justify-between mt-2">
+          <span class="text-xs text-gray-400" id="modalProgressStep">Loading product data...</span>
+          <span class="text-xs text-gray-400">Please wait</span>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0s"></div>
+        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+      </div>
+    </div>
+    
+    <style>
+      @keyframes gradient-x {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .animate-gradient-x {
+        animation: gradient-x 2s ease infinite;
+      }
+    </style>
+  `;
+}
+
+function updateModalProgress(percent, step) {
+  const progressBar = document.getElementById('modalProgressBar');
+  const progressPercent = document.getElementById('modalProgressPercent');
+  const progressStep = document.getElementById('modalProgressStep');
+  
+  if (progressBar) progressBar.style.width = Math.min(percent, 100) + '%';
+  if (progressPercent) progressPercent.textContent = Math.round(percent) + '%';
+  if (progressStep) progressStep.textContent = step;
+}
+
+// ===============================================
+//        UPDATED renderProductDetailModal
+// ===============================================
+async function renderProductDetailModal(id) {
+  const modalInner = document.getElementById('productDetailInner');
+  if (!modalInner) return;
+  
+  // Show loading state with progress bar
+  showModalLoading(modalInner);
+  updateModalProgress(10, 'Fetching product data...');
+  
+  // Small delay to show progress animation
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  const products = await getProducts();
+  const p = products.find(pr => pr.id === id);
+  
+  // Handle product not found
+  if (!p) {
+    updateModalProgress(100, 'Product not found');
+    setTimeout(() => {
+      showProductNotFound(id);
+    }, 500);
+    return;
+  }
+  
+  updateModalProgress(30, 'Loading product details...');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  const avgRating = getAverageRating(id);
+  const reviews = getProductReviews(id);
+  
+  updateModalProgress(45, 'Checking wishlist status...');
   const isWished = (await getWishlist()).includes(id);
-  const shareUrl = `${window.location.origin}${window.location.pathname}?product=${p.id}`;
+  
+  updateModalProgress(55, 'Checking deals...');
+  const shareUrl = `${window.location.origin}${window.location.pathname}?product=${id}`;
   const deals = await getDealsOfToday();
   const dealInfo = deals.find(d => d.id === id);
   const hasDeal = !!dealInfo;
   const discount = hasDeal ? dealInfo.discount : 0;
   const originalPrice = p.price;
   const discountedPrice = hasDeal ? originalPrice * (1 - discount / 100) : originalPrice;
-  const allProducts = await getProducts();
-  const related = allProducts.filter(prod => prod.id !== id && (prod.category === p.category || prod.brand === p.brand)).slice(0, 4);
-
+  
+  updateModalProgress(65, 'Finding related products...');
+  const related = products.filter(prod => prod.id !== id && (prod.category === p.category || prod.brand === p.brand)).slice(0, 4);
+  
+  updateModalProgress(75, 'Preparing image gallery...');
   let allImages = [p.image];
   if (p.images && Array.isArray(p.images)) {
     const extraImages = p.images.filter(img => img !== p.image);
     allImages = [...allImages, ...extraImages];
   }
-
+  
   let galleryHtml = '';
   if (allImages.length > 1) {
     galleryHtml = `
       <div class="flex gap-3 mt-6 overflow-x-auto pb-4 no-scrollbar">
         ${allImages.map((img, index) => `
-          <div class="w-20 h-20 flex-shrink-0 rounded-2xl border-2 border-gray-100 overflow-hidden cursor-pointer hover:border-black transition-all bg-white shadow-sm">
+          <div class="w-20 h-20 flex-shrink-0 rounded-2xl border-2 border-gray-100 overflow-hidden cursor-pointer hover:border-black transition-all bg-white shadow-sm focus-within:border-black">
             <img src="${img}" alt="View ${index + 1}"
-                 onclick="const main = document.getElementById('mainImageDisplay'); main.style.opacity='0.5'; setTimeout(()=>{main.src='${img}'; main.style.opacity='1'}, 100)" 
+                 onclick="const main = document.getElementById('mainImageDisplay'); main.style.opacity='0.5'; setTimeout(()=>{main.src='${img}'; main.style.opacity='1'}, 100)"
                  class="w-full h-full object-contain p-2"
                  onerror="this.src='https://placehold.co/100x100?text=No+Image'">
           </div>
         `).join('')}
       </div>`;
   }
-
-  const modalInner = document.getElementById('productDetailInner');
   
+  updateModalProgress(90, 'Rendering product view...');
+  await new Promise(resolve => setTimeout(resolve, 150));
+  
+  // Build the complete modal HTML (same as before)
   modalInner.innerHTML = `
     <div class="flex flex-col lg:flex-row gap-10 p-2">
       <div class="lg:w-1/2">
         <div class="sticky top-10">
           <div class="modal-image-container bg-white rounded-[2.5rem] overflow-hidden aspect-square flex items-center justify-center border border-gray-100 shadow-sm relative">
             ${hasDeal ? `<div class="absolute top-4 left-4 z-10 bg-primary text-white px-4 py-2 rounded-full font-bold text-lg shadow-lg">-${discount}% OFF</div>` : ''}
-            <img id="mainImageDisplay" src="${p.image}" alt="${p.name}" class="object-contain w-full h-full p-8" />
+            <img id="mainImageDisplay" src="${p.image}" alt="${p.name}" style="transition: transform 0.3s ease;" class="object-contain w-full h-full p-8" />
           </div>
           ${galleryHtml}
         </div>
@@ -733,8 +921,9 @@ async function renderProductDetailModal(id) {
           <div class="grid grid-cols-2 gap-y-4 gap-x-6">
             ${p.cpu ? `<div><p class="text-xs text-gray-500">Processor</p><p class="font-semibold text-sm">${p.cpu}</p></div>` : ''}
             ${p.os ? `<div><p class="text-xs text-gray-500">Operating System</p><p class="font-semibold text-sm">${p.os}</p></div>` : ''}
+              ${p.specs ? `<div><p class="text-xs text-gray-500">Specifications</p><p class="font-semibold text-sm">${p.specs}</p></div>` : ''}
             ${p.stock !== undefined ? `<div><p class="text-xs text-gray-500">Stock Status</p><p class="font-semibold text-sm ${p.stock > 0 ? 'text-green-600' : 'text-red-600'}">${p.stock > 0 ? 'In Stock ('+p.stock+')' : 'Out of Stock'}</p></div>` : ''}
-            <div class="col-span-2"><p class="text-xs text-gray-500">Details</p><p class="text-sm">${p.specs || 'No specific details provided.'}</p></div>
+            <div class="col-span-2"><p class="text-xs text-gray-500">Details</p><p class="text-sm">${p.description || 'No specific details provided.'}</p></div>
           </div>
         </div>
         ${p.variants && p.variants.length ? `
@@ -759,12 +948,9 @@ async function renderProductDetailModal(id) {
           </div>
           <span class="text-xs text-gray-400">${p.stock} available</span>
         </div>
-        <div class="flex flex-col sm:flex-row gap-3 mb-8">
+        <div class="flex flex-col sm:flex-row gap-4 mb-8">
           <button onclick="addToCartWithVariants('${p.id}')" class="flex-[2] ${hasDeal ? 'bg-primary' : 'bg-black'} text-white py-4 rounded-xl font-bold hover:bg-opacity-90 transition-all">
             ${hasDeal ? '🔥 Add Deal to Bag' : 'Add to Bag'}
-          </button>
-          <button onclick="copyProductLink('${id}', '${p.name}')" class="flex-1 bg-white border-2 border-gray-200 text-gray-700 py-4 rounded-xl font-bold hover:border-primary hover:text-primary transition-all flex items-center justify-center gap-2">
-            <span>🔗</span> Copy Link
           </button>
           <button onclick="shareProduct('${shareUrl}', '${p.name}')" class="flex-1 bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
             <span>📤</span> Share
@@ -772,44 +958,40 @@ async function renderProductDetailModal(id) {
         </div>
       </div>
     </div>
-
-    <!-- Reviews Section (same as before, kept for brevity) -->
     <div class="mt-8 border-t border-gray-200 pt-6">
       <h4 class="text-lg font-bold mb-4">⭐ Customer Reviews (${reviews.length})</h4>
-      <div class="space-y-4 max-h-64 overflow-y-auto pr-2 mb-6">
+      <div class="space-y-4 max-h-64 overflow-y-auto pr-2 mb-6" id="reviewsList-${id}">
         ${reviews.length ? reviews.map(r => `
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="flex justify-between items-start">
-              <div><p class="font-semibold">${r.user}</p><div class="star-rating text-yellow-500 text-sm">${renderStars(r.rating)}</div></div>
+              <div>
+                <p class="font-semibold">${r.user}</p>
+                <div class="star-rating text-yellow-500 text-sm">${renderStars(r.rating)}</div>
+              </div>
               <span class="text-xs text-gray-400">${r.date}</span>
             </div>
             <p class="text-sm text-gray-700 mt-2">${r.comment}</p>
           </div>
         `).join('') : '<p class="text-gray-400 text-sm">No reviews yet. Be the first to review!</p>'}
       </div>
-      ${!getCurrentUser() ? `
-      <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-sm text-blue-700 flex items-center gap-2">
-        <i class="fas fa-info-circle"></i>
-        <span>Please enter your name or <button onclick="closeModal('productModal'); openModal('accountModal'); showLoginForm()" class="text-primary font-semibold hover:underline">login</button> to auto-fill</span>
-      </div>` : `
-      <div class="bg-green-50 border border-green-200 rounded-xl p-3 mb-4 text-sm text-green-700 flex items-center gap-2">
-        <i class="fas fa-check-circle"></i>
-        <span>Reviewing as <strong>${getReviewerName()}</strong></span>
-      </div>`}
       <div class="bg-gray-50 rounded-xl p-5">
         <h5 class="font-bold mb-3">✏️ Write a Review</h5>
         <div class="space-y-3">
           <input type="text" id="reviewUserName-${id}" placeholder="Your name" value="${getReviewerName()}" class="w-full border border-gray-200 rounded-lg p-2 text-sm" ${getCurrentUser() ? 'readonly style="background:#f0fdf4; border-color:#86efac;"' : ''} />
           <select id="reviewRating-${id}" class="w-full border border-gray-200 rounded-lg p-2 text-sm">
-            <option value="5">★★★★★ (5)</option><option value="4">★★★★☆ (4)</option><option value="3">★★★☆☆ (3)</option><option value="2">★★☆☆☆ (2)</option><option value="1">★☆☆☆☆ (1)</option>
+            <option value="5">★★★★★ (5)</option>
+            <option value="4">★★★★☆ (4)</option>
+            <option value="3">★★★☆☆ (3)</option>
+            <option value="2">★★☆☆☆ (2)</option>
+            <option value="1">★☆☆☆☆ (1)</option>
           </select>
           <textarea id="reviewComment-${id}" placeholder="Your review..." rows="3" class="w-full border border-gray-200 rounded-lg p-2 text-sm"></textarea>
-          <button onclick="submitReview('${id}')" class="w-full bg-primary text-white py-2 rounded-lg font-semibold hover:bg-primaryHover transition">Submit Review</button>
+          <button onclick="submitReview('${id}')" class="w-full bg-primary text-white py-2 rounded-lg font-semibold hover:bg-primaryHover transition">
+            Submit Review
+          </button>
         </div>
       </div>
     </div>
-
-    <!-- Related Products Section (kept for brevity) -->
     <div class="mt-16 pt-10 border-t border-gray-100">
       <div class="flex items-center justify-between mb-8">
         <h3 class="text-2xl font-bold">Complete the Look</h3>
@@ -821,11 +1003,21 @@ async function renderProductDetailModal(id) {
       <div id="relatedProductsPanel" class="related-panel overflow-hidden transition-all duration-500 ease-in-out" style="max-height: 300px;">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
           ${related.map((rp, index) => `
-            <div class="related-product-card group cursor-pointer opacity-0 transform translate-y-4" onclick="openProductDetail('${rp.id}')" style="animation: fadeInUp 0.5s ease forwards ${index * 0.1}s;">
+            <div class="related-product-card group cursor-pointer opacity-0 transform translate-y-4" 
+                 onclick="openProductDetail('${rp.id}')"
+                 style="animation: fadeInUp 0.5s ease forwards ${index * 0.1}s;">
               <div class="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-4 mb-3 overflow-hidden border-2 border-transparent group-hover:border-primary/20 group-hover:shadow-lg transition-all duration-300 relative">
                 <div class="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10">
-                  <button onclick="event.stopPropagation(); quickAddToCart('${rp.id}')" class="w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-primary hover:text-white transition-all text-sm" title="Add to cart"><i class="fas fa-shopping-cart"></i></button>
-                  <button onclick="event.stopPropagation(); toggleWishlist('${rp.id}')" class="w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all text-sm" title="Add to wishlist"><i class="far fa-heart"></i></button>
+                  <button onclick="event.stopPropagation(); quickAddToCart('${rp.id}')" 
+                          class="w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-primary hover:text-white transition-all text-sm"
+                          title="Add to cart">
+                    <i class="fas fa-shopping-cart"></i>
+                  </button>
+                  <button onclick="event.stopPropagation(); window.quickToggleWishlistPage ? quickToggleWishlistPage('${rp.id}') : toggleWishlist('${rp.id}')" 
+                          class="w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all text-sm"
+                          title="Add to wishlist">
+                    <i class="far fa-heart"></i>
+                  </button>
                 </div>
                 <div class="relative overflow-hidden rounded-xl">
                   <img src="${rp.image}" class="w-full aspect-square object-contain group-hover:scale-110 transition-transform duration-500">
@@ -844,10 +1036,19 @@ async function renderProductDetailModal(id) {
             </div>
           `).join('')}
         </div>
-        ${related.length > 4 ? `<div class="text-center mt-6"><button onclick="toggleRelatedPanel()" class="inline-flex items-center gap-2 text-primary font-medium hover:underline"><span id="relatedPanelToggleText">View All ${related.length} Products</span><i class="fas fa-arrow-right"></i></button></div>` : ''}
+        ${related.length > 4 ? `
+          <div class="text-center mt-6">
+            <button onclick="toggleRelatedPanel()" class="inline-flex items-center gap-2 text-primary font-medium hover:underline">
+              <span id="relatedPanelToggleText">View All ${related.length} Products</span>
+              <i class="fas fa-arrow-right"></i>
+            </button>
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
+  
+  updateModalProgress(100, 'Ready!');
   
   window.currentModalDealPrice = hasDeal ? discountedPrice : null;
   window.currentModalVariants = {};
@@ -859,45 +1060,12 @@ async function renderProductDetailModal(id) {
       this.classList.add('bg-primary', 'text-white', 'border-primary');
       window.currentModalVariants = window.currentModalVariants || {};
       window.currentModalVariants[type] = this.dataset.variantValue;
+      window.selectedVariants = window.selectedVariants || {};
+      window.selectedVariants[type] = this.dataset.variantValue;
     });
   });
+     ActionProgressBar.complete();
 }
-
-// ===============================================
-//        BROWSER URL MANAGEMENT
-// ===============================================
-function updateBrowserUrl(productId) {
-  if (!productId) return;
-  const baseUrl = window.location.origin + window.location.pathname;
-  const newUrl = `${baseUrl}?product=${productId}`;
-  if (window.history && window.history.pushState) {
-    window.history.pushState({ productId: productId }, '', newUrl);
-  }
-}
-
-function cleanBrowserUrl() {
-  const baseUrl = window.location.origin + window.location.pathname;
-  if (window.history && window.history.replaceState) {
-    window.history.replaceState({}, document.title, baseUrl);
-  }
-}
-
-// ===============================================
-//        MODAL HELPERS
-// ===============================================
-window.toggleRelatedPanel = function() {
-  const panel = document.getElementById('relatedProductsPanel');
-  const btnText = document.getElementById('relatedPanelBtnText');
-  const btnIcon = document.getElementById('relatedPanelBtnIcon');
-  if (!panel || !btnText || !btnIcon) return;
-  if (panel.style.maxHeight === '300px' || panel.style.maxHeight === '') {
-    panel.style.maxHeight = '0px'; panel.style.opacity = '0';
-    btnText.textContent = 'Show More'; btnIcon.style.transform = 'rotate(0deg)';
-  } else {
-    panel.style.maxHeight = '2000px'; panel.style.opacity = '1';
-    btnText.textContent = 'Show Less'; btnIcon.style.transform = 'rotate(180deg)';
-  }
-};
 
 function scrollModalToTop() {
   const modalContent = document.querySelector('.modalcontent');

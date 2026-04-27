@@ -211,6 +211,9 @@ async function setFeaturedIds(ids) {
   
   // Save to Supabase
   await saveFeaturedIdsToDB(ids);
+  showToast("Added to Featured");
+  
+
 }
 
 async function getDealsOfToday() {
@@ -1202,24 +1205,87 @@ function timeAgo(dateString) {
 }
 
 async function clearSearchAnalytics() {
-  if (!confirm('Clear all search data?')) return;
+  if (!confirm('Clear all search data? This cannot be undone.')) return;
+  
   AdminProgressBar.start();
-  await saveSearchAnalytics({});
-  await saveFailedSearches([]);
-  AdminProgressBar.complete();
-  showToast('Search analytics cleared');
+  
+  try {
+    // Clear localStorage cache
+    localStorage.removeItem(STORAGE.SEARCH_ANALYTICS);
+    localStorage.removeItem(STORAGE.FAILED_SEARCHES);
+    
+    // Delete ALL rows from Supabase search_analytics table
+    const client = getSupabase();
+    if (client) {
+      const { error: searchError } = await client
+        .from('search_analytics')
+        .delete()
+        .neq('query', ''); // Delete all rows
+      
+      if (searchError) {
+        console.error('❌ Error clearing search analytics:', searchError.message);
+      } else {
+        console.log('✅ Search analytics cleared from Supabase');
+      }
+      
+      // Delete ALL rows from failed_searches table
+      const { error: failedError } = await client
+        .from('failed_searches')
+        .delete()
+        .neq('query', ''); // Delete all rows
+      
+      if (failedError) {
+        console.error('❌ Error clearing failed searches:', failedError.message);
+      } else {
+        console.log('✅ Failed searches cleared from Supabase');
+      }
+    }
+    
+    AdminProgressBar.complete();
+    showToast('🔍 Search analytics cleared successfully');
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    AdminProgressBar.error();
+    showToast('❌ Failed to clear search data');
+  }
+  
   renderAnalyticsDashboard();
 }
 
 async function clearViewAnalytics() {
-  if (!confirm('Clear all view data?')) return;
+  if (!confirm('Clear all view data? This cannot be undone.')) return;
+  
   AdminProgressBar.start();
-  await saveViewAnalytics({});
-  AdminProgressBar.complete();
-  showToast('View analytics cleared');
+  
+  try {
+    // Clear localStorage cache
+    localStorage.removeItem(STORAGE.VIEW_ANALYTICS);
+    
+    // Delete ALL rows from Supabase view_analytics table
+    const client = getSupabase();
+    if (client) {
+      const { error } = await client
+        .from('view_analytics')
+        .delete()
+        .neq('product_id', ''); // Delete all rows
+      
+      if (error) {
+        console.error('❌ Error clearing view analytics:', error.message);
+      } else {
+        console.log('✅ View analytics cleared from Supabase');
+      }
+    }
+    
+    AdminProgressBar.complete();
+    showToast('👁️ View analytics cleared successfully');
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    AdminProgressBar.error();
+    showToast('❌ Failed to clear view data');
+  }
+  
   renderAnalyticsDashboard();
 }
-
 
 // Quick add product from failed search
 window.addQuickProduct = async function(productName) {
@@ -1785,7 +1851,11 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
   // Filter out any base64 images (shouldn't have any, but just in case)
   allImages = allImages.filter(img => !img.startsWith('data:'));
   
-  const validVariants = editVariantsList.filter(v => v.type.trim() && v.values.length);
+const validVariants = editVariantsList.filter(v => {
+  const hasType = v.type && v.type.trim() !== '';
+  const hasValues = v.values && v.values.length > 0;
+  return hasType || hasValues;
+});
 
   let updated = {
     id: window.editingId,
@@ -1971,7 +2041,12 @@ document.getElementById('adminForm').addEventListener('submit', async (e) => {
   // Remove duplicates
   allImages = [...new Set(allImages)];
   
-  const validVariants = variantsList.filter(v => v.type.trim() && v.values.length);
+    // Keep any variant that has at least a Type OR Values filled in
+    const validVariants = variantsList.filter(v => {
+      const hasType = v.type && v.type.trim() !== '';
+      const hasValues = v.values && v.values.length > 0;
+      return hasType || hasValues; // Keep if anything is filled
+    });
   
   let newProd = {
     id: genId(),
@@ -2349,22 +2424,162 @@ function updateMultiImagePreviews(containerId, hiddenFieldId, imagesArray) {
 function renderVariantsUI(containerId, list, onChange) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  container.innerHTML = list.map((variant, idx) => `
-    <div class="flex gap-2 mb-3 items-start variant-row" data-index="${idx}">
-      <input type="text" placeholder="Type (e.g., Size)" value="${variant.type}" data-index="${idx}" data-field="type" class="flex-1 border p-2 rounded-lg text-sm" />
-      <input type="text" placeholder="Values (comma separated)" value="${variant.values.join(', ')}" data-index="${idx}" data-field="values" class="flex-[2] border p-2 rounded-lg text-sm" />
-      <button type="button" class="remove-variant-btn text-red-500 hover:bg-red-50 p-2 rounded-lg" data-index="${idx}">🗑️</button>
-    </div>
-  `).join('');
+  
+  // Auto-detect variant type based on values
+  function autoDetectType(type, values) {
+    // If type is already set, keep it
+    if (type && type.trim() !== '') return type;
+    
+    // If no values, return empty
+    if (!values || values.length === 0) return type;
+    
+    const valuesStr = values.join(' ').toLowerCase();
+    const valueCount = values.length;
+    
+    // Color detection
+    const colorKeywords = [
+      'red', 'blue', 'green', 'yellow', 'black', 'white', 'purple', 'pink', 
+      'orange', 'brown', 'gray', 'grey', 'silver', 'gold', 'navy', 'teal',
+      'maroon', 'violet', 'indigo', 'cyan', 'magenta', 'turquoise', 'lavender',
+      'beige', 'coral', 'crimson', 'khaki', 'plum', 'salmon', 'tan'
+    ];
+    
+    const colorHexPattern = /^#[0-9A-Fa-f]{3,8}$/;
+    
+    const allAreColors = values.every(v => 
+      colorKeywords.includes(v.toLowerCase().trim()) || colorHexPattern.test(v.trim())
+    );
+    
+    if (allAreColors && valueCount >= 1) {
+      return 'Color';
+    }
+    
+    // Size detection
+    const sizePatterns = [
+      /^(XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL)$/i,
+      /^\d{1,2}$/, // Numbers like 7, 8, 9, 10, 42
+      /^(Small|Medium|Large|X-Large|XX-Large)$/i,
+      /^\d{1,2}\s?(US|UK|EU|CM|IN|mm|cm|in|inch|inches)?$/i,
+      /^(Tiny|Mini|Standard|Large|Extra Large|Huge)$/i
+    ];
+    
+    const allAreSizes = values.every(v => 
+      sizePatterns.some(pattern => pattern.test(v.trim()))
+    );
+    
+    if (allAreSizes && valueCount >= 1) {
+      return 'Size';
+    }
+    
+    // Storage/Memory detection
+    const storagePattern = /^\d{1,4}\s?(GB|TB|MB|gb|tb|mb)$/i;
+    const allAreStorage = values.every(v => storagePattern.test(v.trim()));
+    
+    if (allAreStorage && valueCount >= 1) {
+      return 'Storage';
+    }
+    
+    // Weight detection
+    const weightPattern = /^\d{1,4}\s?(g|kg|oz|lb|lbs|grams|pounds)$/i;
+    const allAreWeight = values.every(v => weightPattern.test(v.trim()));
+    
+    if (allAreWeight && valueCount >= 1) {
+      return 'Weight';
+    }
+    
+    // Material detection
+    const materialKeywords = [
+      'cotton', 'leather', 'plastic', 'metal', 'wood', 'glass', 'silicone',
+      'rubber', 'fabric', 'wool', 'silk', 'polyester', 'nylon', 'carbon',
+      'stainless', 'aluminum', 'copper', 'brass', 'bronze', 'ceramic',
+      'denim', 'linen', 'velvet', 'suede', 'bamboo', 'paper', 'cardboard'
+    ];
+    
+    const allAreMaterials = values.every(v => 
+      materialKeywords.includes(v.toLowerCase().trim())
+    );
+    
+    if (allAreMaterials && valueCount >= 1) {
+      return 'Material';
+    }
+    
+    // Style/Pattern detection
+    const styleKeywords = [
+      'striped', 'solid', 'patterned', 'floral', 'geometric', 'polka',
+      'checkered', 'plaid', 'printed', 'plain', 'textured', 'matte',
+      'glossy', 'transparent', 'opaque', 'satin', 'glitter', 'metallic'
+    ];
+    
+    const allAreStyles = values.every(v => 
+      styleKeywords.includes(v.toLowerCase().trim())
+    );
+    
+    if (allAreStyles && valueCount >= 1) {
+      return 'Style';
+    }
+    
+    // No auto-detection matched
+    return type;
+  }
+  
+  container.innerHTML = list.map((variant, idx) => {
+    // Auto-detect type on render
+    const detectedType = autoDetectType(variant.type, variant.values);
+    
+    // If auto-detection found a type, update the list silently
+    if (detectedType && detectedType !== variant.type) {
+      list[idx].type = detectedType;
+      if (onChange) onChange(list);
+    }
+    
+    return `
+      <div class="flex gap-2 mb-3 items-start variant-row" data-index="${idx}">
+        <input type="text" placeholder="Type (e.g., Size)" value="${detectedType || variant.type}" data-index="${idx}" data-field="type" class="flex-1 border p-2 rounded-lg text-sm" />
+        <input type="text" placeholder="Values (comma separated)" value="${variant.values.join(', ')}" data-index="${idx}" data-field="values" class="flex-[2] border p-2 rounded-lg text-sm" />
+        <button type="button" class="remove-variant-btn text-red-500 hover:bg-red-50 p-2 rounded-lg" data-index="${idx}">🗑️</button>
+      </div>
+    `;
+  }).join('');
 
   container.querySelectorAll('.variant-row input').forEach(input => {
     input.addEventListener('input', () => {
       const idx = parseInt(input.dataset.index);
       const field = input.dataset.field;
-      if (field === 'type') list[idx].type = input.value;
-      else if (field === 'values') list[idx].values = input.value.split(',').map(s => s.trim()).filter(s => s);
+      
+      if (field === 'type') {
+        list[idx].type = input.value;
+      } else if (field === 'values') {
+        // Get raw values as typed
+        list[idx].values = input.value.split(',').map(s => s.trim()).filter(s => s);
+        
+        // Auto-detect type if not manually set
+        if (!list[idx].type || list[idx].type.trim() === '') {
+          const detectedType = autoDetectType('', list[idx].values);
+          if (detectedType) {
+            list[idx].type = detectedType;
+            // Re-render to show the auto-detected type
+            renderVariantsUI(containerId, list, onChange);
+            return;
+          }
+        }
+      }
+      
       if (onChange) onChange(list);
     });
+    
+    // Add blur event to auto-detect when user finishes typing values
+    if (input.dataset.field === 'values') {
+      input.addEventListener('blur', () => {
+        const idx = parseInt(input.dataset.index);
+        if (!list[idx].type || list[idx].type.trim() === '') {
+          const detectedType = autoDetectType('', list[idx].values);
+          if (detectedType) {
+            list[idx].type = detectedType;
+            renderVariantsUI(containerId, list, onChange);
+          }
+        }
+      });
+    }
   });
 
   container.querySelectorAll('.remove-variant-btn').forEach(btn => {
@@ -2916,7 +3131,7 @@ async function toggleFeatured(id) {
     showToast("Added to Featured");
   }
   await setFeaturedIds(ids);
-    AdminProgressBar.complete();
+  
   refreshAll();
 }
 

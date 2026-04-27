@@ -1,12 +1,10 @@
-
-console.log('✅ authu.js loaded successfully!');    
+console.log('🌈 Colorful authu.js loaded successfully!');    
 const AdminProgressBar = {
   bar: null,
+  fill: null,
   timeout: null,
   
-  // Initialize the progress bar element
   init() {
-    // Create progress bar if it doesn't exist
     if (!document.getElementById('adminActionProgress')) {
       const bar = document.createElement('div');
       bar.id = 'adminActionProgress';
@@ -16,35 +14,44 @@ const AdminProgressBar = {
         top: 0;
         left: 0;
         width: 100%;
-        height: 3px;
+        height: 4px;
         z-index: 100000;
         pointer-events: none;
         opacity: 0;
-        transition: opacity 0.2s ease;
+        transition: opacity 0.4s ease;
       `;
       
       const fill = bar.querySelector('#adminActionProgressFill');
       fill.style.cssText = `
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, #e60012, #ff6b6b, #e60012);
-        background-size: 200% 100%;
-        animation: adminProgressShimmer 1.5s linear infinite;
-        transition: width 0.3s ease;
-        border-radius: 0 2px 2px 0;
+        /* Rainbow Gradient */
+        background: linear-gradient(90deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
+        background-size: 400% 100%;
+        animation: adminProgressRainbow 3s linear infinite;
+        transition: width 0.3s cubic-bezier(0.1, 0.7, 1.0, 0.1);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.7), 0 0 5px rgba(0, 0, 0, 0.2);
+        border-radius: 0 4px 4px 0;
       `;
       
       document.body.appendChild(bar);
       
-      // Add shimmer animation style
       if (!document.getElementById('adminProgressStyle')) {
         const style = document.createElement('style');
         style.id = 'adminProgressStyle';
         style.textContent = `
-          @keyframes adminProgressShimmer {
+          @keyframes adminProgressRainbow {
             0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
+          }
+          #adminActionProgressFill::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            height: 100%;
+            width: 50px;
+            box-shadow: 0 0 15px 5px inherit;
+            filter: blur(5px);
           }
         `;
         document.head.appendChild(style);
@@ -55,67 +62,52 @@ const AdminProgressBar = {
     this.fill = document.getElementById('adminActionProgressFill');
   },
   
-  // Start showing progress
-  start(message = '') {
+  start() {
     if (!this.bar) this.init();
-    
-    // Clear any existing timeout
     if (this.timeout) clearTimeout(this.timeout);
     
-    // Show bar
     this.bar.style.opacity = '1';
     this.fill.style.width = '0%';
+    this.fill.style.filter = 'hue-rotate(0deg)'; // Reset color shift
     
-    // Animate to 30% quickly
     setTimeout(() => {
-      this.fill.style.width = '30%';
+      this.fill.style.width = '40%';
     }, 50);
     
-    // Animate to 70% slowly
     this.timeout = setTimeout(() => {
-      this.fill.style.width = '70%';
+      this.fill.style.width = '80%';
+    }, 1000);
+  },
+  
+  complete() {
+    if (!this.bar) return;
+    if (this.timeout) clearTimeout(this.timeout);
+    
+    this.fill.style.width = '100%';
+    
+    this.timeout = setTimeout(() => {
+      this.bar.style.opacity = '0';
+      setTimeout(() => { this.fill.style.width = '0%'; }, 400);
     }, 500);
   },
   
-  // Complete the progress
-  complete() {
-    if (!this.bar) return;
-    
-    if (this.timeout) clearTimeout(this.timeout);
-    
-    // Fill to 100%
-    this.fill.style.width = '100%';
-    
-    // Hide after short delay
-    this.timeout = setTimeout(() => {
-      this.fill.style.width = '0%';
-      this.bar.style.opacity = '0';
-    }, 400);
-  },
-  
-  // Show error state
   error() {
     if (!this.bar) return;
-    
     if (this.timeout) clearTimeout(this.timeout);
     
-    // Flash red
+    // Intense Red Error Flash
     this.fill.style.width = '100%';
-    this.fill.style.background = '#ef4444';
+    this.fill.style.background = 'repeating-linear-gradient(45deg, #ff0000, #ff0000 10px, #b91c1c 10px, #b91c1c 20px)';
     
     this.timeout = setTimeout(() => {
-      this.fill.style.width = '0%';
       this.bar.style.opacity = '0';
-      // Reset color
       setTimeout(() => {
-        this.fill.style.background = 'linear-gradient(90deg, #e60012, #ff6b6b, #e60012)';
-        this.fill.style.backgroundSize = '200% 100%';
-      }, 200);
-    }, 600);
+        // Reset to rainbow
+        this.fill.style.background = 'linear-gradient(90deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000)';
+        this.fill.style.backgroundSize = '400% 100%';
+      }, 400);
+    }, 1000);
   }
 };
 
-// Initialize progress bar immediately
-document.addEventListener('DOMContentLoaded', () => {
-  AdminProgressBar.init();
-});
+document.addEventListener('DOMContentLoaded', () => AdminProgressBar.init());

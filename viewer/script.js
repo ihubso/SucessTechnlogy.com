@@ -1,371 +1,3 @@
-// ===============================================
-//        SESSION ID (only localStorage kept)
-// ===============================================
-// ===============================================
-//        LOADING OVERLAY & PROGRESS TRACKER
-// ===============================================
-const LoadingManager = {
-  overlay: null,
-  progressBar: null,
-  progressPercent: null,
-  loadingStatus: null,
-  totalSteps: 10,
-  currentStep: 0,
-  steps: [],
-  
-  init() {
-    this.overlay = document.getElementById('loadingOverlay');
-    this.progressBar = document.getElementById('progressBar');
-    this.progressPercent = document.getElementById('progressPercent');
-    this.loadingStatus = document.getElementById('loadingStatus');
-    this.steps = [
-      { id: 'step1', threshold: 0 },
-      { id: 'step2', threshold: 2 },
-      { id: 'step3', threshold: 5 },
-      { id: 'step4', threshold: 7 },
-      { id: 'step5', threshold: 9 }
-    ];
-  },
-  
-  updateProgress(increment = 1, message = '') {
-    this.currentStep = Math.min(this.currentStep + increment, this.totalSteps);
-    const percentage = Math.round((this.currentStep / this.totalSteps) * 100);
-    
-    if (this.progressBar) {
-      this.progressBar.style.width = percentage + '%';
-    }
-    
-    if (this.progressPercent) {
-      this.progressPercent.textContent = percentage + '%';
-    }
-    
-    if (message && this.loadingStatus) {
-      this.loadingStatus.textContent = message;
-    }
-    
-    // Update step indicators
-    this.steps.forEach(step => {
-      const stepEl = document.getElementById(step.id);
-      if (stepEl) {
-        if (this.currentStep >= step.threshold + 1) {
-          stepEl.classList.add('completed');
-          stepEl.classList.remove('current');
-        } else if (this.currentStep >= step.threshold) {
-          stepEl.classList.add('current');
-          stepEl.classList.remove('completed');
-        } else {
-          stepEl.classList.remove('completed', 'current');
-        }
-      }
-    });
-  },
-  
-  hide() {
-    if (this.overlay) {
-      this.updateProgress(1, '🎉 Everything is ready!');
-      
-      // Add final step animation
-      setTimeout(() => {
-        this.overlay.classList.add('fade-out');
-        
-        // Remove overlay from DOM after animation
-        setTimeout(() => {
-          if (this.overlay && this.overlay.parentNode) {
-            this.overlay.parentNode.removeChild(this.overlay);
-          }
-        }, 500);
-      }, 300);
-    }
-  }
-};
-
-
-const SESSION_KEY = 'shop_session_id';
-function getSessionId() {
-  let sid = localStorage.getItem(SESSION_KEY);
-  if (!sid) {
-    sid = 'sess-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem(SESSION_KEY, sid);
-  }
-  return sid;
-}
-
-const RECENTLY_VIEWED_KEY = 'shop_recently_viewed';
-const MAX_RECENT = 8;
-const CURRENT_USER_KEY = 'shop_current_user';
-const STORAGE = {
-  PRODUCTS: 'shop_products_v3',
-  CART: 'shop_cart_v1',
-  WISHLIST: 'shop_wishlist',
-  REVIEWS: 'shop_reviews',
-  BUSINESS: 'business_info',
-  CONTACT: 'contact_location_info',
-  FEATURED: 'featured_product_ids',
-  DEALS: 'deals_of_today',
-  ORDERS: 'shop_orders_v1',
-  SEARCH_ANALYTICS: 'shop_search_analytics',
-  VIEW_ANALYTICS: 'shop_view_analytics',
-  FAILED_SEARCHES: 'shop_failed_searches'
-};
-// ===============================================
-//        SUPABASE WRAPPERS (async replacements)
-// ===============================================
-let GLOBAL_PRODUCTS = null;
-let _cachedReviews = null;
-
-async function getProducts() {
-  if (GLOBAL_PRODUCTS) return GLOBAL_PRODUCTS;
-  const data = await fetchProductsFromDB();
-  if (data && data.length > 0) {
-    GLOBAL_PRODUCTS = normalizeProductImages(data);
-    return GLOBAL_PRODUCTS;
-  }
-  GLOBAL_PRODUCTS = normalizeProductImages(DEFAULT_PRODUCTS);
-  return GLOBAL_PRODUCTS;
-}
-
-async function saveProducts(prods) {
-  GLOBAL_PRODUCTS = prods;
-  try {
-    const client = getSupabase();
-    if (client) {
-      // Only upsert/update - NEVER delete automatically
-      for (const p of prods) {
-        const { error } = await client
-          .from('products')
-          .upsert([p], { onConflict: 'id' });
-        
-        if (error) {
-          console.warn('⚠️ Could not update product:', p.id, error.message);
-        }
-      }
-      // REMOVED the automatic delete logic
-      // Products should only be deleted manually from admin panel
-    }
-  } catch (e) {
-    console.warn('Supabase save failed, products not persisted.');
-  }
-}
-function getUserSessionKey() {
-  const user = getCurrentUser();
-  return user ? `user_${user.id}` : getSessionId();
-}
-
-async function getCart() { 
-  const sessionKey = getUserSessionKey();
-  return await fetchCartFromDB(sessionKey) || []; 
-}
-async function saveCart(cart) { 
-  const sessionKey = getUserSessionKey();
-  
-  // Ensure each cart item has required fields
-  const safeCart = cart.map(item => ({
-    product_id: item.product_id || item.id || '',
-    name: item.name || 'Product',
-    price: item.price || 0,
-    qty: item.qty || 1,
-    image: item.image || 'https://placehold.co/600x400'
-  })).filter(item => item.product_id); // Remove items without product_id
-  
-  await saveCartToDB(sessionKey, safeCart); 
-  renderCart(); 
-}
-
-async function getWishlist() { 
-  const sessionKey = getUserSessionKey();
-  return await fetchWishlistFromDB(sessionKey) || []; 
-}
-
-async function saveWishlist(wish) {
-  const sessionKey = getUserSessionKey();
-  await saveWishlistToDB(sessionKey, wish);
-  renderWishlistCount();
-  updateAllWishlistIcons();
-  renderWishlistModal();
-}
-// ===============================================
-//   USER-SPECIFIC CART, WISHLIST & ORDERS
-// ===============================================
-async function mergeGuestDataToUser(userId) {
-  const guestSessionId = getSessionId();
-  const userSessionKey = `user_${userId}`;
-  
-  // Merge cart
-  const guestCart = await fetchCartFromDB(guestSessionId) || [];
-  const userCart = await fetchCartFromDB(userSessionKey) || [];
-  
-  if (guestCart.length > 0) {
-    // Merge carts (add quantities for same products)
-    const mergedCart = [...userCart];
-    guestCart.forEach(guestItem => {
-      const existingIndex = mergedCart.findIndex(item => 
-        item.product_id === guestItem.product_id
-      );
-      if (existingIndex >= 0) {
-        mergedCart[existingIndex].qty = (mergedCart[existingIndex].qty || 0) + (guestItem.qty || 1);
-      } else {
-        mergedCart.push({
-          ...guestItem,
-          session_id: userSessionKey
-        });
-      }
-    });
-    
-    // Save merged cart to user session
-    const safeCart = mergedCart.map(item => ({
-      product_id: item.product_id || '',
-      name: item.name || 'Product',
-      price: item.price || 0,
-      qty: item.qty || 1,
-      image: item.image || ''
-    })).filter(item => item.product_id);
-    
-    await saveCartToDB(userSessionKey, safeCart);
-    
-    // Clear guest cart
-    await saveCartToDB(guestSessionId, []);
-  }
-  
-  // Merge wishlist
-  const guestWishlist = await fetchWishlistFromDB(guestSessionId) || [];
-  const userWishlist = await fetchWishlistFromDB(userSessionKey) || [];
-  
-  if (guestWishlist.length > 0) {
-    const mergedWishlist = [...new Set([...userWishlist, ...guestWishlist])];
-    await saveWishlistToDB(userSessionKey, mergedWishlist);
-    await saveWishlistToDB(guestSessionId, []);
-  }
-}
-
-async function getReviews() {
-  if (_cachedReviews) return _cachedReviews;
-  _cachedReviews = await fetchReviewsFromDB() || {};
-  return _cachedReviews;
-}
-async function saveReviews(rev) { 
-  await saveReviewsToDB(rev); 
-  _cachedReviews = rev;
-}
-
-async function getOrders() { 
-  return await getOrdersFromDB() || []; 
-}
-async function saveOrder(order) {
-  await createOrderInDB(order);
-}
-
-async function getBusinessInfo() {
-  const data = await fetchBusinessInfoFromDB();
-  return data || { 
-    shop_name: "Sucess Technology", 
-    email: "hello@Sucess Technology.com", 
-    phone: "+1 800 555 1234", 
-    address: "123 Commerce Street", 
-    facebook: "", 
-    instagram: "", 
-    tiktok: "" 
-  };
-}
-async function setBusinessInfo(info) {
-  await saveBusinessInfoToDB(info);
-}
-
-async function getContactInfo() {
-  return await fetchContactInfoFromDB() || { 
-    latitude: 40.7128, 
-    longitude: -74.0060, 
-    hours: "", 
-    description: "", 
-    shop_photo: "" 
-  };
-}
-
-async function getFeaturedIds() { 
-  // Always try Supabase first
-  const cloudIds = await fetchFeaturedIdsFromDB();
-  if (cloudIds && cloudIds.length > 0) {
-    // Update localStorage cache
-    localStorage.setItem(STORAGE.FEATURED, JSON.stringify(cloudIds));
-    return cloudIds;
-  }
-  
-  // Fallback to localStorage only if Supabase is empty
-  const localIds = JSON.parse(localStorage.getItem(STORAGE.FEATURED) || '[]');
-  return localIds;
-}
-async function setFeaturedIds(ids) {
-  // Update localStorage as cache only
-  localStorage.setItem(STORAGE.FEATURED, JSON.stringify(ids));
-  
-  // Save to Supabase
-  await saveFeaturedIdsToDB(ids);
-}
-
-async function getDealsOfToday() {
-  const deals = await fetchDealsFromDB();
-  return (deals || []).map(d => ({ id: d.product_id, discount: d.discount }));
-}
-
-async function getSearchAnalytics() { 
-  return await fetchSearchAnalyticsFromDB() || {}; 
-}
-async function setSearchAnalytics(a) { 
-  await saveSearchAnalyticsToDB(a); 
-}
-
-async function getViewAnalytics() { 
-  return await fetchViewAnalyticsFromDB() || {}; 
-}
-async function setViewAnalytics(a) { 
-  await saveViewAnalyticsToDB(a); 
-}
-
-async function getFailedSearches() { 
-  return await fetchFailedSearchesFromDB() || []; 
-}
-async function setFailedSearches(f) { 
-  await saveFailedSearchesToDB(f); 
-}
-
-async function getAccounts() { 
-  return await fetchCustomersFromDB() || []; 
-}
-async function saveAccounts(accounts) { 
-  await saveCustomersToDB(accounts); 
-}
-
-// Recently viewed kept in localStorage (session-like, ephemeral)
-function addToRecentlyViewed(productId) {
-  let recent = JSON.parse(localStorage.getItem(RECENTLY_VIEWED_KEY) || '[]');
-  recent = recent.filter(id => id !== productId);
-  recent.unshift(productId);
-  if (recent.length > MAX_RECENT) recent.pop();
-  localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(recent));
-  renderRecentlyViewed();
-}
-function getRecentlyViewed() { 
-  return JSON.parse(localStorage.getItem(RECENTLY_VIEWED_KEY) || '[]'); 
-}
-
-// Current user kept in localStorage (session identity)
-function getCurrentUser() {
-  return JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
-}
-function setCurrentUser(user) {
-  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-  updateAccountUI();
-}
-
-// Helper functions
-function normalizeProductImages(products) {
-  return products.map(p => ({
-    ...p,
-    images: p.images && p.images.length ? p.images : [p.image]
-  }));
-}
-function generateId() { 
-  return Date.now() + '-' + Math.random().toString(36).substr(2, 8); 
-}
 
 // ===============================================
 //               UTILITIES
@@ -380,15 +12,7 @@ function showToast(msg) {
 window.openModal = (id) => document.getElementById(id)?.classList.remove('hidden');
 window.closeModal = (id) => document.getElementById(id)?.classList.add('hidden');
 
-// ===============================================
-//         STATE & SORTING
-// ===============================================
-let currentPage = 1;
-let itemsPerPage = 6;
-let currentSort = "name_asc";
-let currentCategory = "all";
-let currentSearch = "";
-let currentSidebarCategory = null;
+
 
 function getSortedProducts(products) {
   let sorted = [...products];
@@ -399,259 +23,7 @@ function getSortedProducts(products) {
   return sorted;
 }
 
-// ===============================================
-//               PRODUCT RENDERING (async)
-// ===============================================
-async function renderProductCard(p) {
-  const wishlist = await getWishlist();
-  const isWished = wishlist.includes(p.id);
-  const avgRating = getAverageRating(p.id);
-  const deals = await getDealsOfToday();
-  const dealInfo = deals.find(d => d.id === p.id);
-  const hasDeal = !!dealInfo;
-  const discount = hasDeal ? dealInfo.discount : 0;
-  const originalPrice = p.price;
-  const discountedPrice = hasDeal ? originalPrice * (1 - discount / 100) : originalPrice;
 
-  return `
-    <article class="product-card" data-product-id="${p.id}">
-      <div class="wishlist-icon ${isWished ? 'active' : ''}" data-wish="${p.id}">
-        ${isWished ? '❤️' : '🤍'}
-      </div>
-      ${p.isNew ? '<div class="new-badge">NEW</div>' : ''}
-      ${p.isHot ? '<div class="hot-badge">HOT</div>' : ''}
-      ${hasDeal ? `<div class="deal-badge">-${discount}%</div>` : ''}
-      <img src="${p.image}" alt="${p.name}" loading="lazy">
-      <h3>${p.name}</h3>
-      <div class="star-rating">${renderStars(avgRating)} (${getReviewCount(p.id)})</div>
-      ${hasDeal ? `
-        <p class="deal-old-price">FCFA ${originalPrice.toFixed(2)}</p>
-        <div class="price-row">
-          <strong class="deal-new-price">FCFA ${discountedPrice.toFixed(2)}</strong>
-          <button data-add="${p.id}">Add</button>
-        </div>
-      ` : `
-        <div class="price-row">
-          <strong>FCFA ${p.price.toFixed(2)}</strong>
-          <button data-add="${p.id}">Add to cart</button>
-        </div>
-      `}
-    </article>
-  `;
-}
-
-async function renderAllProducts() {
-  const container = document.getElementById('productsGrid');
-  if (!container) return;
-  
-  let products = await getProducts();
-  if (currentSearch) {
-    products = products.filter(p => p.name.toLowerCase().includes(currentSearch.toLowerCase()));
-  }
-  if (currentCategory !== "all") {
-    products = products.filter(p => p.category === currentCategory);
-  }
-  
-  let sorted = getSortedProducts(products);
-  let totalPages = Math.ceil(sorted.length / itemsPerPage);
-  if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
-  
-  let start = (currentPage - 1) * itemsPerPage;
-  let paginated = sorted.slice(start, start + itemsPerPage);
-  
-  const cards = await Promise.all(paginated.map(p => renderProductCard(p)));
-  container.innerHTML = cards.length ? cards.join('') : '<div class="text-center py-10">No products found.</div>';
-  
-  attachCardEvents();
-  renderPagination(totalPages);
-}
-
-function renderPagination(totalPages) {
-  let paginationDiv = document.getElementById('paginationControls');
-  if (!paginationDiv) return;
-  if (totalPages <= 1) { paginationDiv.innerHTML = ''; return; }
-  
-  let html = '';
-  for (let i = 1; i <= totalPages; i++) {
-    html += `<button class="pagination-btn ${i === currentPage ? 'active-page' : ''}" data-page="${i}">${i}</button>`;
-  }
-  paginationDiv.innerHTML = html;
-  
-  document.querySelectorAll('.pagination-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      currentPage = parseInt(btn.dataset.page);
-      renderAllProducts();
-    });
-  });
-}
-
-async function renderHotProducts() {
-  let prods = (await getProducts()).filter(p => p.isHot);
-  const grid = document.getElementById('hotProductsGrid');
-  if (!grid) return;
-  const cards = await Promise.all(prods.map(p => renderProductCard(p)));
-  grid.innerHTML = cards.join('');
-  attachCardEvents();
-}
-
-async function renderNewProducts() {
-  let prods = (await getProducts()).filter(p => p.isNew);
-  const grid = document.getElementById('newProductsGrid');
-  if (!grid) return;
-  const cards = await Promise.all(prods.map(p => renderProductCard(p)));
-  grid.innerHTML = cards.join('');
-  attachCardEvents();
-}
-
-function renderRecentlyViewed() {
-  const container = document.getElementById('recentlyViewedGrid');
-  if (!container) return;
-  
-  const recentIds = getRecentlyViewed();
-  if (!recentIds.length) {
-    container.innerHTML = '<p class="text-center text-gray-500 col-span-full py-8">No recently viewed products yet.</p>';
-    return;
-  }
-  
-  const products = GLOBAL_PRODUCTS || [];
-  const recentProducts = recentIds.map(id => products.find(p => p.id === id)).filter(Boolean);
-  
-  if (recentProducts.length === 0) {
-    container.innerHTML = '<p class="text-center text-gray-500 col-span-full py-8">No recently viewed products.</p>';
-    return;
-  }
-  
-  const displayProducts = recentProducts.slice(0, 4);
-  Promise.all(displayProducts.map(p => renderProductCard(p))).then(cards => {
-    container.innerHTML = cards.join('');
-    attachCardEvents();
-    
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'text-sm text-gray-400 hover:text-red-500 transition-colors mt-2 clear-recent-btn';
-    clearBtn.innerHTML = 'Clear History';
-    clearBtn.onclick = () => {
-      localStorage.removeItem(RECENTLY_VIEWED_KEY);
-      renderRecentlyViewed();
-    };
-    const parent = container.parentElement;
-    const existingClearBtn = parent.querySelector('.clear-recent-btn');
-    if (existingClearBtn) existingClearBtn.remove();
-    parent.appendChild(clearBtn);
-  });
-}
-
-// ===============================================
-//         DEALS HORIZONTAL SCROLL
-// ===============================================
-function initDealsScroll() {
-  const dealsGrid = document.getElementById('dealsGrid');
-  const prevBtn = document.getElementById('dealsPrevBtn');
-  const nextBtn = document.getElementById('dealsNextBtn');
-  const progressFill = document.getElementById('dealsProgressFill');
-  if (!dealsGrid) return;
-  
-  function updateNavButtons() {
-    if (!dealsGrid) return;
-    const scrollLeft = dealsGrid.scrollLeft;
-    const maxScroll = dealsGrid.scrollWidth - dealsGrid.clientWidth;
-    if (prevBtn) prevBtn.classList.toggle('hidden', scrollLeft <= 0);
-    if (nextBtn) nextBtn.classList.toggle('hidden', scrollLeft >= maxScroll - 1);
-    if (progressFill) progressFill.style.width = `${(scrollLeft / maxScroll) * 100}%`;
-  }
-  
-  function scrollLeft() {
-    const cardWidth = dealsGrid.querySelector('.product-card')?.offsetWidth || 280;
-    dealsGrid.scrollBy({ left: -(cardWidth + 24), behavior: 'smooth' });
-  }
-  function scrollRight() {
-    const cardWidth = dealsGrid.querySelector('.product-card')?.offsetWidth || 280;
-    dealsGrid.scrollBy({ left: cardWidth + 24, behavior: 'smooth' });
-  }
-  
-  if (prevBtn) prevBtn.addEventListener('click', scrollLeft);
-  if (nextBtn) nextBtn.addEventListener('click', scrollRight);
-  dealsGrid.addEventListener('scroll', updateNavButtons);
-  dealsGrid.addEventListener('wheel', (e) => {
-    if (e.deltaY !== 0) {
-      e.preventDefault();
-      dealsGrid.scrollLeft += e.deltaY;
-    }
-  }, { passive: false });
-  
-  setTimeout(updateNavButtons, 100);
-  window.addEventListener('resize', updateNavButtons);
-  new MutationObserver(updateNavButtons).observe(dealsGrid, { childList: true, subtree: true });
-}
-
-async function renderDealsOfToday() {
-  const dealsGrid = document.getElementById('dealsGrid');
-  if (!dealsGrid) return;
-  
-  const products = await getProducts();
-  const dealItems = (await getDealsOfToday())
-    .map(deal => {
-      const product = products.find(p => p.id === deal.id);
-      if (!product) return null;
-      const discount = Math.max(1, Math.min(95, Number(deal.discount) || 0));
-      const oldPrice = Number(product.price) || 0;
-      const newPrice = oldPrice * (1 - discount / 100);
-      return { product, discount, oldPrice, newPrice };
-    })
-    .filter(Boolean);
-  
-  if (!dealItems.length) {
-    dealsGrid.innerHTML = '<p class="text-slate-500 text-center w-full py-8">No deals of today yet.</p>';
-    return;
-  }
-  
-  dealsGrid.style.opacity = '0';
-  dealsGrid.innerHTML = dealItems.map(({ product, discount, oldPrice, newPrice }, index) => `
-    <article class="product-card deal-card" data-product-id="${product.id}" style="animation-delay: ${index * 0.1}s">
-      <div class="deal-badge">-${discount}%</div>
-      <img src="${product.image}" alt="${product.name}" loading="lazy">
-      <h3>${product.name}</h3>
-      <div class="star-rating">${renderStars(getAverageRating(product.id))} (${getReviewCount(product.id)})</div>
-      <p class="deal-old-price">FCFA ${oldPrice.toFixed(2)}</p>
-      <div class="price-row">
-        <strong class="deal-new-price">FCFA ${newPrice.toFixed(2)}</strong>
-        <button data-add="${product.id}">Add to cart</button>
-      </div>
-    </article>
-  `).join('');
-  
-  setTimeout(() => {
-    dealsGrid.style.opacity = '1';
-    dealsGrid.style.transition = 'opacity 0.5s ease';
-  }, 50);
-  
-  attachCardEvents();
-  setTimeout(() => initDealsScroll(), 100);
-}
-
-let autoScrollInterval;
-function startAutoScroll() {
-  const dealsGrid = document.getElementById('dealsGrid');
-  if (!dealsGrid) return;
-  stopAutoScroll();
-  autoScrollInterval = setInterval(() => {
-    const maxScroll = dealsGrid.scrollWidth - dealsGrid.clientWidth;
-    if (dealsGrid.scrollLeft >= maxScroll - 1) {
-      dealsGrid.scrollTo({ left: 0, behavior: 'smooth' });
-    } else {
-      const cardWidth = dealsGrid.querySelector('.product-card')?.offsetWidth || 280;
-      dealsGrid.scrollBy({ left: cardWidth + 24, behavior: 'smooth' });
-    }
-  }, 4000);
-}
-function stopAutoScroll() { 
-  if (autoScrollInterval) { clearInterval(autoScrollInterval); autoScrollInterval = null; } 
-}
-function initAutoScrollPause() {
-  const dealsGrid = document.getElementById('dealsGrid');
-  if (!dealsGrid) return;
-  dealsGrid.addEventListener('mouseenter', stopAutoScroll);
-  dealsGrid.addEventListener('mouseleave', startAutoScroll);
-}
 
 // ===============================================
 //               EVENT HANDLING
@@ -700,17 +72,50 @@ async function wishClick(e) {
 // ===============================================
 //        OPEN PRODUCT DETAIL (async)
 // ===============================================
-window.currentModalProductId = null;
+
 
 async function openProductDetail(id) {
-     ActionProgressBar.start();
-  window.currentModalProductId = id;
-  addToRecentlyViewed(id);
-  await trackProductView(id);
-   updateBrowserUrl(id);
-  await renderProductDetailModal(id);
-  openModal('productModal');
-  setTimeout(() => scrollModalToTop(), 100);
+  ActionProgressBar.start();
+  
+  try {
+    // Show modal immediately with loading state
+    const modalInner = document.getElementById('productDetailInner');
+    if (modalInner) {
+      modalInner.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12">
+          <div class="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p class="text-gray-500">Loading product details...</p>
+        </div>
+      `;
+    }
+    openModal('productModal');
+    
+    // Fetch JUST this product from Supabase
+    const product = await fetchProductDetails(id);
+    
+    if (!product) {
+      console.error("Product not found:", id);
+      showProductNotFound(id);
+      ActionProgressBar.complete();
+      return;
+    }
+    
+    // Update state
+    window.currentModalProductId = id;
+    addToRecentlyViewed(id);
+    await trackProductView(id);
+    updateBrowserUrl(id);
+    
+    // Render with the fetched product (pass it directly!)
+    await renderProductDetailModal(id, product);
+    
+    setTimeout(() => scrollModalToTop(), 100);
+    ActionProgressBar.complete();
+    
+  } catch (error) {
+    console.error("Error in openProductDetail:", error);
+    ActionProgressBar.complete();
+  }
 }
 // ===============================================
 //        BROWSER URL MANAGEMENT
@@ -840,44 +245,6 @@ function showProductNotFound(id) {
 // ===============================================
 //        MODAL LOADING PROGRESS BAR
 // ===============================================
-function showModalLoading(modalInner) {
-  modalInner.innerHTML = `
-    <div class="flex flex-col items-center justify-center py-12">
-      <div class="w-full max-w-md mb-8">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-sm font-medium text-gray-600">Loading product details...</span>
-          <span class="text-sm font-semibold text-primary" id="modalProgressPercent">0%</span>
-        </div>
-        <div class="relative h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div id="modalProgressBar" 
-               class="absolute top-0 left-0 h-full bg-gradient-to-r from-primary via-red-400 to-primary bg-[length:200%_100%] animate-gradient-x rounded-full transition-all duration-500 ease-out"
-               style="width: 0%">
-          </div>
-        </div>
-        <div class="flex justify-between mt-2">
-          <span class="text-xs text-gray-400" id="modalProgressStep">Loading product data...</span>
-          <span class="text-xs text-gray-400">Please wait</span>
-        </div>
-      </div>
-      <div class="flex gap-2">
-        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0s"></div>
-        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
-        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
-      </div>
-    </div>
-    
-    <style>
-      @keyframes gradient-x {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-      }
-      .animate-gradient-x {
-        animation: gradient-x 2s ease infinite;
-      }
-    </style>
-  `;
-}
 
 function updateModalProgress(percent, step) {
   const progressBar = document.getElementById('modalProgressBar');
@@ -896,9 +263,7 @@ async function renderProductDetailModal(id) {
   const modalInner = document.getElementById('productDetailInner');
   if (!modalInner) return;
   
-  // Show loading state with progress bar
-  showModalLoading(modalInner);
-  updateModalProgress(10, 'Fetching product data...');
+
   
   // Small delay to show progress animation
   await new Promise(resolve => setTimeout(resolve, 200));
@@ -1291,177 +656,122 @@ window.quickAddToCart = async function(id) {
 window.addToCartWithDealPrice = async function(id, qty = 1, variants = {}, dealPrice, discount) {
   let products = await getProducts();
   let product = products.find(p => p.id === id);
-  if (!product || product.stock <= 0) { showToast("Out of stock"); return; }
+  if (!product || product.stock <= 0) { 
+    showToast("Out of stock"); 
+    return; 
+  }
   
-  ActionProgressBar.start();  // ADD THIS
+  ActionProgressBar.start();
   
   try {
     let cart = await getCart();
-    let existing = cart.find(i => i.id === id && JSON.stringify(i.variants) === JSON.stringify(variants));
+    
+    // Match by product_id AND variants
+    const variantsKey = JSON.stringify(variants || {});
+    let existing = cart.find(i => 
+      (i.product_id === id || i.id === id) && 
+      JSON.stringify(i.variants || {}) === variantsKey
+    );
     
     if (existing) {
       if (existing.qty + qty > product.stock) { 
-        ActionProgressBar.error();  // ADD THIS
+        ActionProgressBar.error();
         showToast(`Only ${product.stock} left`); 
         return; 
       }
       existing.qty += qty;
     } else {
       if (qty > product.stock) { 
-        ActionProgressBar.error();  // ADD THIS
+        ActionProgressBar.error();
         showToast(`Only ${product.stock} left`); 
         return; 
       }
-      cart.push({ id, name: product.name, price: dealPrice, originalPrice: product.price, discount, qty, image: product.image, variants: variants || {}, isDeal: true });
+      cart.push({ 
+        product_id: id,
+        id, 
+        name: product.name, 
+        price: dealPrice, 
+        originalPrice: product.price, 
+        discount, 
+        qty, 
+        image: product.image, 
+        variants: variants || {}, // ✅ STORE VARIANTS
+        isDeal: true 
+      });
     }
+    
     await saveCart(cart);
-    ActionProgressBar.complete();  // ADD THIS
-    showToast(`${product.name} added at deal price!`);
+    ActionProgressBar.complete();
+    
+    const variantText = Object.keys(variants || {}).length > 0 
+      ? ' (' + Object.entries(variants).map(([k, v]) => `${k}: ${v}`).join(', ') + ')'
+      : '';
+    
+    showToast(`${product.name}${variantText} added at deal price!`);
   } catch (error) {
-    ActionProgressBar.error();  // ADD THIS
+    ActionProgressBar.error();
   }
 };
 
 window.addToCart = async function (id, qty = 1, variants = {}) {
   let products = await getProducts();
   let product = products.find(p => p.id === id);
-   if (!product || product.stock <= 0) { 
+  
+  if (!product || product.stock <= 0) { 
     showToast("Out of stock"); 
-    return;   // No ActionProgressBar needed here since it hasn't started yet
+    return;
   }
-    ActionProgressBar.start();
+  
+  ActionProgressBar.start();
   let cart = await getCart();
-  let existing = cart.find(i => (i.product_id === id || i.id === id));
+  
+  // Match by BOTH product_id AND variants (so different variants can coexist)
+  const variantsKey = JSON.stringify(variants || {});
+  let existing = cart.find(i => 
+    (i.product_id === id || i.id === id) && 
+    JSON.stringify(i.variants || {}) === variantsKey
+  );
   
   if (existing) {
     if ((existing.qty || 0) + qty > product.stock) {
-        ActionProgressBar.error(); 
+      ActionProgressBar.error(); 
       showToast(`Only ${product.stock} left`); 
       return; 
     }
-
     existing.qty = (existing.qty || 0) + qty;
   } else {
     if (qty > product.stock) { 
       showToast(`Only ${product.stock} left`); 
-        ActionProgressBar.error();
+      ActionProgressBar.error();
       return; 
     }
+    
     cart.push({ 
       product_id: id,
       id: id, 
       name: product.name, 
       price: product.price, 
       qty, 
-      image: product.image
+      image: product.image,
+      variants: variants || {}, // ✅ STORE VARIANTS HERE
     });
   }
+  
   await saveCart(cart);
-  showToast(`${product.name} added`);
-      ActionProgressBar.complete();
+  
+  // Show selected variants in the toast
+  const variantText = Object.keys(variants || {}).length > 0 
+    ? ' (' + Object.entries(variants).map(([k, v]) => `${k}: ${v}`).join(', ') + ')'
+    : '';
+  
+  showToast(`${product.name}${variantText} added`);
+  ActionProgressBar.complete();
 };
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
   showToast("Link copied!");
 }
 
-// ===============================================
-//                 CART LOGIC (async)
-// ===============================================
-async function renderCart() {
-  let cart = await getCart();
-  document.getElementById('cartCount').innerText = cart.reduce((s, i) => s + i.qty, 0);
-  
-  let container = document.getElementById('cartItems');
-  if (!cart.length) {
-    container.innerHTML = '<div class="text-center py-8">Cart empty</div>';
-    document.getElementById('cartTotal').innerText = '0.00';
-    return;
-  }
-  
-  let total = 0;
-  container.innerHTML = cart.map((item, index) => {
-    total += item.price * item.qty;
-    let variantsText = '';
-    if (item.variants && Object.keys(item.variants).length) {
-      variantsText = Object.entries(item.variants).map(([k, v]) => `${k}: ${v}`).join(', ');
-    }
-    return `
-      <div class="cart-item flex justify-between items-center mb-4 border-b pb-2" data-cart-index="${index}">
-        <div>
-          <strong>${item.name}</strong><br>
-          ${item.isDeal ? `
-            <div>
-              <small class="text-gray-400 line-through">FCFA ${item.originalPrice.toFixed(2)}</small>
-              <small class="text-primary font-bold ml-2">FCFA ${item.price.toFixed(2)}</small>
-              <span class="text-xs bg-primary text-white px-2 py-0.5 rounded-full ml-2">-${item.discount}%</span>
-            </div>
-          ` : `
-            <small>FCFA ${item.price.toFixed(2)}</small>
-          `}
-          ${variantsText ? `<div class="text-xs text-gray-500 mt-1">${variantsText}</div>` : ''}
-        </div>
-        <div>
-          <button class="cart-qty-dec px-2 bg-gray-200 rounded" data-index="${index}">-</button>
-          <span class="mx-2">${item.qty}</span>
-          <button class="cart-qty-inc px-2 bg-gray-200 rounded" data-index="${index}">+</button>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  document.getElementById('cartTotal').innerText = total.toFixed(2);
-  
-  container.querySelectorAll('.cart-qty-dec').forEach(btn => {
-    btn.addEventListener('click', () => updateQtyByIndex(parseInt(btn.dataset.index), -1));
-  });
-  container.querySelectorAll('.cart-qty-inc').forEach(btn => {
-    btn.addEventListener('click', () => updateQtyByIndex(parseInt(btn.dataset.index), 1));
-  });
-}
-
-async function updateQtyByIndex(index, delta) {
-  let cart = await getCart();
-  if (index < 0 || index >= cart.length) return;
-  
-  let item = cart[index];
-  let products = await getProducts();
-  let prod = products.find(p => p.id === item.id);
-  let newQ = item.qty + delta;
-  
-  if (newQ <= 0) {
-    cart.splice(index, 1);
-  } else if (prod && newQ > prod.stock) {
-    showToast(`Only ${prod.stock} left`);
-    return;
-  } else {
-    item.qty = newQ;
-  }
-  await saveCart(cart);
-}
-
-window.clearCart = async function () {
-  ActionProgressBar.start();
-  
-  try {
-    await saveCart([]);
-    ActionProgressBar.complete();
-    showToast("Cart cleared");
-  } catch (e) {
-    ActionProgressBar.error();
-    console.error('Clear cart error:', e);
-  }
-};
-
-
-window.openCheckout = async function () {
-  if ((await getCart()).length === 0) {
-    showToast("Cart empty");
-    return;
-  }
-  closeModal('cartModal');
-  openModal('checkoutModal');
-};
 
 // ===============================================
 //               CHECKOUT LOGIC (async)
@@ -2503,113 +1813,6 @@ window.toggleAccountDropdown = function() {
     }, 100);
   }
 };
-// ===============================================
-//        SILENT BACKGROUND UPDATER
-// ===============================================
-const BackgroundUpdater = {
-  updateInterval: null,
-  isUpdating: false,
-  lastUpdate: null,
-  
-  // Start background updates every 5 minutes
-  start(intervalMs = 300000) { // 5 minutes default
-    console.log('🔄 Background updater started');
-    
-    // Run first update after 10 seconds (page fully loaded)
-    setTimeout(() => {
-      this.silentUpdate();
-    }, 10000);
-    
-    // Then run periodically
-    this.updateInterval = setInterval(() => {
-      this.silentUpdate();
-    }, intervalMs);
-    
-    // Also update when tab becomes visible again
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this.lastUpdate) {
-        const timeSinceUpdate = Date.now() - this.lastUpdate;
-        if (timeSinceUpdate > 60000) { // If more than 1 minute
-          this.silentUpdate();
-        }
-      }
-    });
-  },
-  
-  // Stop background updates
-  stop() {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
-    }
-  },
-  
-  // Silent update - no UI disruption
-  async silentUpdate() {
-    if (this.isUpdating) return;
-    this.isUpdating = true;
-    
-    try {
-      // Update products silently
-      const freshProducts = await fetchProductsFromDB();
-      if (freshProducts && freshProducts.length > 0) {
-        // Only update if we got valid data
-        GLOBAL_PRODUCTS = normalizeProductImages(freshProducts);
-        localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(GLOBAL_PRODUCTS));
-        console.log('🔄 Products synced silently');
-      }
-      
-      // Update reviews silently
-      const freshReviews = await fetchReviewsFromDB();
-      if (freshReviews && Object.keys(freshReviews).length > 0) {
-        _cachedReviews = freshReviews;
-        console.log('🔄 Reviews synced silently');
-      }
-      
-      // Update deals silently
-      const freshDeals = await fetchDealsFromDB();
-      if (freshDeals !== null) {
-        localStorage.setItem(STORAGE.DEALS, JSON.stringify(freshDeals));
-        console.log('🔄 Deals synced silently');
-      }
-      
-      // Update featured silently
-      const freshFeatured = await fetchFeaturedIdsFromDB();
-      if (freshFeatured && freshFeatured.length > 0) {
-        localStorage.setItem(STORAGE.FEATURED, JSON.stringify(freshFeatured));
-      }
-      
-      // Update business info silently
-      const freshBusiness = await fetchBusinessInfoFromDB();
-      if (freshBusiness) {
-        localStorage.setItem(STORAGE.BUSINESS, JSON.stringify(freshBusiness));
-      }
-      
-      this.lastUpdate = Date.now();
-      console.log('✅ Silent background update completed');
-      
-    } catch (error) {
-      console.warn('⚠️ Background update failed:', error.message);
-    } finally {
-      this.isUpdating = false;
-    }
-  },
-  
-  // Quick update - just products and cart
-  async quickUpdate() {
-    try {
-      const freshProducts = await fetchProductsFromDB();
-      if (freshProducts && freshProducts.length > 0) {
-        GLOBAL_PRODUCTS = normalizeProductImages(freshProducts);
-        localStorage.setItem(STORAGE.PRODUCTS, JSON.stringify(GLOBAL_PRODUCTS));
-      }
-      this.lastUpdate = Date.now();
-    } catch (error) {
-      console.warn('Quick update failed:', error.message);
-    }
-  }
-};
-
 
 
 // ===============================================

@@ -21,8 +21,11 @@ async function fetchProductsFromDB() {
       return null;
     }
     
-    console.log(`✅ Fetched ${data.length} products from Supabase`);
-    return data;
+    // Normalize each product
+    const normalized = data.map(normalizeProductFromDB);
+    
+    console.log(`✅ Fetched ${normalized.length} products from Supabase`);
+    return normalized;
   } catch (err) {
     console.error('❌ Unexpected error:', err.message);
     return null;
@@ -37,26 +40,45 @@ async function addProductToDB(product) {
   }
   
   try {
+    // Ensure variants is a valid array
+  const safeVariants = Array.isArray(product.variants) 
+  ? product.variants.filter(v => {
+      const hasType = v.type && v.type.trim() !== '';
+      const hasValues = v.values && v.values.length > 0;
+      return hasType || hasValues; // Save as long as something is filled
+    })
+  : [];
+    
+    // Ensure images is a valid array
+    const safeImages = Array.isArray(product.images) && product.images.length > 0
+      ? product.images
+      : [product.image || 'https://placehold.co/600x400'];
+    
+    const productData = {
+      id: product.id,
+      name: product.name,
+      price: Number(product.price) || 0,
+      category: product.category || 'phone',
+      description: product.description || '',
+      stock: Number(product.stock) || 0,
+      image: product.image || 'https://placehold.co/600x400',
+      images: safeImages,
+      isHot: product.isHot || false,
+      isNew: product.isNew || false,
+      brand: product.brand || '',
+      os: product.os || '',
+      cpu: product.cpu || '',
+      specs: product.specs || '',
+      variants: safeVariants,  // This will be stored as jsonb
+      deliveryEstimate: product.deliveryEstimate || ''
+    };
+    
+    console.log('📤 Sending product to Supabase:', productData.name);
+    console.log('📤 Variants being sent:', JSON.stringify(safeVariants));
+    
     const { data, error } = await client
       .from('products')
-      .insert([{
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        category: product.category || 'phone',
-        description: product.description || '',
-        stock: product.stock || 0,
-        image: product.image || 'https://placehold.co/600x400',
-        images: product.images || [product.image],
-        isHot: product.isHot || false,
-        isNew: product.isNew || false,
-        brand: product.brand || '',
-        os: product.os || '',
-        cpu: product.cpu || '',
-        specs: product.specs || '',
-        variants: product.variants || [],
-        deliveryEstimate: product.deliveryEstimate || ''  // Try without quotes
-      }])
+      .insert([productData])
       .select();
     
     if (error) {
@@ -65,26 +87,12 @@ async function addProductToDB(product) {
       
       // If the column name is the issue, try with snake_case
       if (error.message.includes('deliveryEstimate') || error.message.includes('delivery_estimate')) {
-        console.log('🔄 Retrying with snake_case column name...');
+        console.log('🔄 Retrying without deliveryEstimate...');
         const { data: retryData, error: retryError } = await client
           .from('products')
           .insert([{
-            id: product.id,
-            name: product.name,
-            price: product.price,
-            category: product.category || 'phone',
-            description: product.description || '',
-            stock: product.stock || 0,
-            image: product.image || 'https://placehold.co/600x400',
-            images: product.images || [product.image],
-            isHot: product.isHot || false,
-            isNew: product.isNew || false,
-            brand: product.brand || '',
-            os: product.os || '',
-            cpu: product.cpu || '',
-            specs: product.specs || '',
-            variants: product.variants || []
-            // Don't include deliveryEstimate column at all
+            ...productData,
+            deliveryEstimate: undefined
           }])
           .select();
         
@@ -97,17 +105,98 @@ async function addProductToDB(product) {
         return retryData ? retryData[0] : null;
       }
       
+      // Check if it's a variants column issue
+      if (error.message.includes('variants')) {
+        console.log('🔄 Retrying with variants as string...');
+        const { data: retryData2, error: retryError2 } = await client
+          .from('products')
+          .insert([{
+            ...productData,
+            variants: JSON.stringify(safeVariants)
+          }])
+          .select();
+        
+        if (retryError2) {
+          console.error('❌ Retry with string variants failed:', retryError2.message);
+          return null;
+        }
+        
+        console.log('✅ Product saved with stringified variants!');
+        return retryData2 ? retryData2[0] : null;
+      }
+      
       return null;
     }
     
-    console.log('✅ Product saved to Supabase!');
+    console.log('✅ Product saved to Supabase!', data?.[0]?.id);
     return data ? data[0] : null;
   } catch (err) {
     console.error('❌ Error:', err.message);
     return null;
   }
 }
+// Normalize product data after fetching from DB
+function normalizeProductFromDB(product) {
+  if (!product) return product;
+  
+  // Parse variants if it's a string
+  if (typeof product.variants === 'string') {
+    try {
+      product.variants = JSON.parse(product.variants);
+    } catch (e) {
+      product.variants = [];
+    }
+  }
+  
+  // Ensure variants is always an array
+  if (!Array.isArray(product.variants)) {
+    product.variants = [];
+  }
+  
+  // Parse images if it's a string
+  if (typeof product.images === 'string') {
+    try {
+      product.images = JSON.parse(product.images);
+    } catch (e) {
+      product.images = [product.image];
+    }
+  }
+  
+  // Ensure images is always an array
+  if (!Array.isArray(product.images)) {
+    product.images = [product.image];
+  }
+  
+  return product;
+}
+async function fetchProductDetails(productId) {
+  const client = getSupabase(); // ✅ This was missing in your version
+  if (!client) {
+    console.warn('⚠️ Supabase not available');
+    return null;
+  }
+  
+  try {
+    console.log(`Fetching details for ID: ${productId}`);
 
+    const { data, error } = await client
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .single();
+
+    if (error) {
+      console.error('❌ Error fetching product details:', error.message);
+      return null;
+    }
+
+    console.log('✅ Product details fetched:', data.name);
+    return data;
+  } catch (error) {
+    console.error('❌ Error fetching item details:', error.message);
+    return null;
+  }
+}
 async function createOrderInDB(order) {
   const client = getSupabase();
   if (!client) {
@@ -254,7 +343,20 @@ async function fetchCartFromDB(sessionId) {
       console.error('❌ Error fetching cart:', error.message);
       return [];
     }
-    return data || [];
+    
+    // Map database columns back to cart item format
+    return (data || []).map(item => ({
+      product_id: item.product_id,
+      id: item.product_id,  // For backward compatibility
+      name: item.name || 'Unknown Product',
+      price: item.price || 0,
+      qty: item.qty || 1,
+      image: item.image || 'https://placehold.co/600x400',
+      variants: item.variants || {},           // ✅ Restore variants
+      isDeal: item.is_deal || false,           // ✅ Restore deal flag
+      originalPrice: item.original_price || null,  // ✅ Restore original price
+      discount: item.discount || null           // ✅ Restore discount
+    }));
   } catch (err) {
     console.error('❌ Error:', err.message);
     return [];
@@ -277,7 +379,11 @@ async function saveCartToDB(sessionId, cart) {
         name: item.name || 'Unknown Product',
         price: item.price || 0,
         qty: item.qty || 1,
-        image: item.image || 'https://placehold.co/600x400'
+        image: item.image || 'https://placehold.co/600x400',
+        variants: item.variants || {},           // ✅ Store variants as jsonb
+        is_deal: item.isDeal || false,           // ✅ Store deal flag
+        original_price: item.originalPrice || null,  // ✅ Store original price for deals
+        discount: item.discount || null           // ✅ Store discount percentage
       }));
       
       // Filter out any rows with empty product_id
@@ -288,6 +394,28 @@ async function saveCartToDB(sessionId, cart) {
         if (error) {
           console.error('❌ Error saving cart:', error.message);
           console.error('Error details:', error);
+          
+          // If variants column doesn't exist yet, retry without it
+          if (error.message.includes('variants') || error.message.includes('is_deal')) {
+            console.log('🔄 Retrying without new columns...');
+            const basicRows = validRows.map(row => ({
+              session_id: row.session_id,
+              product_id: row.product_id,
+              name: row.name,
+              price: row.price,
+              qty: row.qty,
+              image: row.image
+            }));
+            
+            const { error: retryError } = await client.from('cart').insert(basicRows);
+            if (retryError) {
+              console.error('❌ Retry also failed:', retryError.message);
+            } else {
+              console.log('✅ Cart saved (basic mode - run SQL to add new columns)');
+            }
+          }
+        } else {
+          console.log('✅ Cart saved to Supabase with variants');
         }
       }
     }
